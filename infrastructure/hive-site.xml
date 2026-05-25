@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configuration>
+
+  <!-- ── Metastore DB (PostgreSQL) ──────────────────────────────────────── -->
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://ge_postgres:5432/hive_metastore</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>postgres</value>
+  </property>
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>postgres</value>
+  </property>
+
+  <!-- ── Schema auto-init ───────────────────────────────────────────────── -->
+  <property>
+    <name>datanucleus.autoCreateSchema</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>datanucleus.fixedDatastore</name>
+    <value>false</value>
+  </property>
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>false</value>
+  </property>
+
+  <!-- ── Warehouse dir (HMS stores only metadata; Spark/Trino use MinIO) ── -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>/tmp/hive/warehouse</value>
+  </property>
+
+  <!-- ── Thrift listener ────────────────────────────────────────────────── -->
+  <property>
+    <name>hive.server2.thrift.port</name>
+    <value>9083</value>
+  </property>
+
+  <!-- ── S3A / MinIO (HMS needs this to check/create s3a:// locations) ── -->
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>http://geminio:9000</value>
+  </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>minioadmin</value>
+  </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>minioadmin</value>
+  </property>
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>fs.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+
+</configuration>

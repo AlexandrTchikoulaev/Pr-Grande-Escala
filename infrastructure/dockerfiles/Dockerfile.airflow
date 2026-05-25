@@ -1,0 +1,27 @@
+FROM apache/airflow:2.8.0-python3.11
+
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential libpq-dev openjdk-17-jre-headless curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH="$JAVA_HOME/bin:$PATH"
+
+USER airflow
+
+COPY infrastructure/requirements.airflow.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Download Iceberg + S3A JARs into PySpark's jars directory so Airflow
+# can run Spark jobs for the Gold layer without --packages at runtime.
+RUN SPARK_JARS=$(python -c "import pyspark, os; print(os.path.join(os.path.dirname(pyspark.__file__), 'jars'))") && \
+    curl -fsSL -o "$SPARK_JARS/iceberg-spark-runtime-3.5_2.12-1.5.2.jar" \
+        "https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.5_2.12/1.5.2/iceberg-spark-runtime-3.5_2.12-1.5.2.jar" && \
+    curl -fsSL -o "$SPARK_JARS/hadoop-aws-3.3.4.jar" \
+        "https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" && \
+    curl -fsSL -o "$SPARK_JARS/aws-java-sdk-bundle-1.12.267.jar" \
+        "https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.267/aws-java-sdk-bundle-1.12.267.jar"

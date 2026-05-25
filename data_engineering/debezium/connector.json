@@ -1,0 +1,23 @@
+{
+  "name": "simulated-orders-connector",
+  "config": {
+    "connector.class":                    "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname":                  "ge_postgres",
+    "database.port":                      "5432",
+    "database.user":                      "postgres",
+    "database.password":                  "postgres",
+    "database.dbname":                    "olist_db",
+    "topic.prefix":                       "debezium",
+    "table.include.list":                 "public.simulated_orders",
+    "plugin.name":                        "pgoutput",
+    "slot.name":                          "debezium_slot",
+    "publication.name":                   "debezium_pub",
+    "key.converter":                      "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter":                    "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable":       "false",
+    "value.converter.schemas.enable":     "false",
+    "heartbeat.interval.ms":              "10000",
+    "snapshot.mode":                      "initial",
+    "decimal.handling.mode":              "string"
+  }
+}

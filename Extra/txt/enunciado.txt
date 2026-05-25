@@ -1,0 +1,78 @@
+
+LCD – CDGE - Enunciado do Trabalho Prático
+2026
+2
+armazenamento, processamento e análise. Este trabalho prático tem como objetivo o desenvolvimento de um
+sistema de análise de dados especialmente orientado para a deteção precoce de tendências de produto no
+retalho especializado. Assim, pretende-se que os alunos desta unidade curricular concebam e implementem o
+sistema pretendido com uma arquitetura que permita acolher os dados provenientes de várias fontes de dados
+heterogéneas, estruturando-os em diferentes camadas, e que garanta os processos necessários para realizarem
+as tarefas de ingestão, transformação, limpeza e preparação de dados envolvidos. A solução a desenvolver
+deverá integrar, no mínimo, dados históricos de vendas e pelo menos uma fonte adicional de natureza distinta,
+como dados de pesquisa online, opiniões de clientes sobre produtos ou dados simulados de redes sociais. A partir
+dos dados integrados no sistema, os alunos deverão definir e calcular métricas quantitativas de tendência, tais
+como taxas de crescimento, aceleração da procura ou indicadores de deteção de situações extraordinárias, e
+aplicar algumas técnicas de análise de séries temporais para modelação e previsão de procura de produtos ou de
+categorias de produtos. O trabalho deverá ainda incluir a avaliação do desempenho dos modelos desenvolvidos
+através de métricas apropriadas, bem como uma análise crítica dos resultados obtidos, discutindo limitações,
+pressupostos e a sua potencial aplicação num contexto real.
+O caso de aplicação deverá ser proposto e justificado por cada grupo de alunos. Após a identificação e
+caracterização dos vários cenários aplicacionais envolvidos no caso de estudo definido, pretende-se que, em
+termos gerais, cada grupo de trabalho faça a:
+1. Definição, contextualização, motivação e objectivos para a implementação do sistema de análise de
+dados em questão, tendo em conta que a empresa a idealizar deverá ter acesso a diferentes fontes de
+dados, de natureza heterogénea.
+2. Análise e justificação da viabilidade do projeto, enumerando vantagens e ganhos operacionais a obter
+com a implementação do sistema de análise.
+3. Desenvolvimento de um plano para a execução do projeto de implementação do sistema de análise e
+caracterização global do sistema (componentes e serviços), tendo em consideração os processos de
+angariação, trasformação, integração, visualização e análise de dados a implementar, bem como as
+plataformas necessárias para os acolher.
+4. Elaboração de um plano para a realização do levantamento de requisitos para o sistema geral, bem
+como para cada um dos processos manipulação de dados anteriormente referidos. Com
+plementarmente, devem identificar e caracterizar os diversos perfis de utilização envolvidos no
+problema e associá-los, devidamente, com cada um dos processos a desenvolver.
+5. Definição e caracterização dos diferentes tipos de sistemas de dados a modelar e a implementar para
+suporte aos processos de integração de dados referidos e aos processos de visualização e análise
+identificados e caracterizados no dossier de requsitos do sistema.
+LCD – CDGE - Enunciado do Trabalho Prático
+2026
+3
+6. Definição, caracterização do sistema de integração de dados a modelar e a implementar para
+povoamento dos diversos sistemas de dados identificados e caracterizados anteriormente, de acordo
+com o requistos estabelecidos.
+7. Definição, caracterização do sistema de visualização e análise de dados a implementar, para acolhimento
+e aplicação dos modelos e técnicas de aprendizagem máquina escolhidas para a deteção e prevenção de
+situações de churn na empresa idealizada.
+8. Construção, validação e documentação do sistema de análise de dados projetado. Justificação das
+ferramentas utilizadas ao longo do desenvolvimento do projeto, particularmente as relacionadas com o
+processo de integração e de implementação do sistema de dados, bem como dos sistemas de
+visualização e análise de dados.
+9. Análise crítica do trabalho realizado em geral, e dos resultados do sistema. Quando possível, apresentar
+eventuais ações corretivas ou de melhoria do projeto desenvolvido.
+De referir que, as várias áreas operacionais identificadas no caso de estudo escolhido, bem como os processos de
+tratamento de informação que com elas possam estar eventualmente associados, constituem importantes
+referenciais para o processo de análise que cada grupo de trabalho deverá realizar. Como tal, os alunos deverão
+avaliar o que é que cada uma dessas áreas poderá envolver em termos de recursos (físicos e humanos), quais os
+serviços que disponibilizam, quais os elementos de informação necessários para a sua implementação e de que
+forma é que se poderão integrar no modelo global do sistema de informação da organização em causa. Na
+realização do trabalho prático, cada grupo de projeto deverá seguir a metodologia e as técnicas apresentadas nas
+aulas, ao longo do semestre, e apresentadas nas diversas referências bibliográficas fornecidas.
+3 Relatório do Trabalho
+No final do trabalho, cada grupo de trabalho deverá elaborar um relatório técnico, de acordo com o modelo
+fornecido pelo docente responsável da disciplina, que apresente de forma clara, detalhada e completa o trabalho
+efectuado, apresentando o sistema que foi projetado e implementado, bem como as principais estratégias de
+desenvolvimento adoptadas ao longo do seu processo de desenvolvimento.
+4 Entrega e Apresentação do Trabalho
+O relatório final do trabalho prático deverá ser enviado por correio electrónico para o docente responsável da
+disciplina através do endereço obelo@di.uminho.pt, até às 24 horas do dia definido para a entrega do trabalho.
+No corpo da mensagem de correio electrónico enviada deverá constar o número e a constituição do grupo de
+trabalho, a designação do trabalho realizado e um endereço de correio electrónico para confirmação da recepção
+do trabalho. No assunto dessa mensagem deverá constar, obrigatoriamente, a referência “LCD-CDGE-2025-26 –
+Entrega do Trabalho Prático (Grupo ??)”.
+LCD – CDGE - Enunciado do Trabalho Prático
+2026
+4
+5 Bibliografia
+Como suporte à realização deste trabalho os grupos deverão apoiar-se nas referências bibliográficas
+recomendadas pelo docente responsável pela unidade curricular ao longo da sua selcionação.

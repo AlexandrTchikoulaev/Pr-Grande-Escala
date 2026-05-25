@@ -1,0 +1,4 @@
+pyspark>=3.5,<4.0
+pyarrow>=14.0
+boto3>=1.34
+trino>=0.328.0

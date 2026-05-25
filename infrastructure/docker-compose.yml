@@ -1,0 +1,516 @@
+name: trendmart
+
+# ---------------------------------------------------------------------------
+# Airflow common anchor
+# ---------------------------------------------------------------------------
+x-airflow-common:
+  &airflow-common
+  build:
+    context: ..
+    dockerfile: infrastructure/dockerfiles/Dockerfile.airflow
+  environment:
+    &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@ge_postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: 'Europe/Lisbon'
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: 'Europe/Lisbon'
+    TZ: Europe/Lisbon
+    # Paths the DAGs can import from
+    PYTHONPATH: '/opt/airflow/dags:/opt/airflow/project:/opt/airflow/de_project:/opt/airflow/ml_project'
+    MLFLOW_TRACKING_URI: 'http://ge_mlflow:5000'
+    # Service endpoints (internal Docker DNS)
+    DB_HOST: ge_postgres
+    DB_PORT: '5432'
+    DB_USER: postgres
+    DB_PASSWORD: postgres
+    MINIO_ENDPOINT: geminio:9000
+    MINIO_ACCESS: minioadmin
+    MINIO_SECRET: minioadmin
+    HMS_URI: thrift://gehms:9083
+    TRINO_HOST: ge_trino
+    TRINO_PORT: '8080'
+  volumes:
+    - ../analytical_engineering:/opt/airflow/project
+    - ../analytical_engineering/pipeline:/opt/airflow/dags
+    - ../machine_learning:/opt/airflow/ml_project
+    - ../machine_learning/pipeline:/opt/airflow/dags/ml
+    - ../data_engineering:/opt/airflow/de_project
+    - ge_airflow_logs:/opt/airflow/logs
+  depends_on:
+    ge_postgres:
+      condition: service_healthy
+    ge_hive_metastore:
+      condition: service_healthy
+  networks:
+    - ge_network
+
+# ---------------------------------------------------------------------------
+services:
+# ---------------------------------------------------------------------------
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  ge_postgres:
+    image: postgres:14
+    container_name: ge_postgres
+    restart: unless-stopped
+    # wal_level=logical is required for Debezium CDC
+    command: >
+      postgres
+        -c wal_level=logical
+        -c max_replication_slots=5
+        -c max_wal_senders=5
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      TZ: Europe/Lisbon
+    volumes:
+      - ge_postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ge_network
+
+  # ── MinIO ──────────────────────────────────────────────────────────────────
+  ge_minio:
+    image: minio/minio:latest
+    container_name: ge_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      TZ: Europe/Lisbon
+    ports:
+      - "9004:9000"
+      - "9005:9001"
+    volumes:
+      - ge_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      ge_network:
+        aliases:
+          - geminio   # kept for Hive/Trino config compatibility
+
+  # ── MinIO bucket init (runs once, then exits) ──────────────────────────────
+  ge_minio_init:
+    image: minio/mc:latest
+    container_name: ge_minio_init
+    restart: on-failure
+    depends_on:
+      ge_minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://geminio:9000 minioadmin minioadmin &&
+        mc mb --ignore-existing local/bronze &&
+        mc mb --ignore-existing local/silver &&
+        mc mb --ignore-existing local/gold &&
+        mc mb --ignore-existing local/raw-reviews &&
+        mc mb --ignore-existing local/mlflow &&
+        echo '[minio_init] All buckets ready.'
+      "
+    networks:
+      - ge_network
+
+  # ── Kafka (KRaft — no Zookeeper) ───────────────────────────────────────────
+  ge_kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: ge_kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://ge_kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@ge_kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_HEAP_OPTS: '-Xmx512m -Xms256m'
+      TZ: Europe/Lisbon
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    ports:
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    networks:
+      - ge_network
+
+  # ── Kafka Connect (Debezium) ───────────────────────────────────────────────
+  ge_kafka_connect:
+    image: debezium/connect:2.6
+    container_name: ge_kafka_connect
+    restart: unless-stopped
+    environment:
+      BOOTSTRAP_SERVERS: ge_kafka:9092
+      GROUP_ID: debezium-connect-group
+      CONFIG_STORAGE_TOPIC: debezium.connect.configs
+      OFFSET_STORAGE_TOPIC: debezium.connect.offsets
+      STATUS_STORAGE_TOPIC: debezium.connect.statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      HEAP_OPTS: '-Xmx512m -Xms256m'
+      TZ: Europe/Lisbon
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    ports:
+      - "8083:8083"
+    depends_on:
+      ge_kafka:
+        condition: service_healthy
+      ge_postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/connectors"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    networks:
+      - ge_network
+
+  # ── Debezium connector registration (runs once, then exits) ───────────────
+  ge_debezium_init:
+    image: curlimages/curl:latest
+    container_name: ge_debezium_init
+    restart: on-failure
+    depends_on:
+      ge_kafka_connect:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "STATUS=$$(curl -s -o /dev/null -w '%{http_code}' -X POST http://ge_kafka_connect:8083/connectors -H 'Content-Type: application/json' -d @/connector/connector.json); if [ \"$$STATUS\" = '201' ] || [ \"$$STATUS\" = '409' ]; then echo \"[debezium_init] Connector ready (HTTP $$STATUS)\"; exit 0; else echo \"[debezium_init] Failed (HTTP $$STATUS) -- will retry\"; exit 1; fi"
+    volumes:
+      - ../data_engineering/debezium:/connector:ro
+    networks:
+      - ge_network
+
+  # ── Hive Metastore ─────────────────────────────────────────────────────────
+  ge_hive_metastore:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.hive
+    container_name: ge_hive_metastore
+    restart: unless-stopped
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      IS_RESUME: 'false'
+      SERVICE_OPTS: '-Xmx512m -Xms256m'
+      TZ: Europe/Lisbon
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    ports:
+      - "9083:9083"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9083"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      ge_postgres:
+        condition: service_healthy
+      ge_minio:
+        condition: service_healthy
+    networks:
+      ge_network:
+        aliases:
+          - gehms   # kept for Trino iceberg.properties compatibility
+
+  # ── Trino ──────────────────────────────────────────────────────────────────
+  ge_trino:
+    image: trinodb/trino:430
+    container_name: ge_trino
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./trino/etc:/etc/trino
+      - ge_trino_data:/data/trino
+    environment:
+      TZ: Europe/Lisbon
+    depends_on:
+      ge_hive_metastore:
+        condition: service_healthy
+      ge_minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      ge_network:
+        aliases:
+          - ge_trino
+
+  # ── Airflow init (DB migration + admin user) ───────────────────────────────
+  ge_airflow_init:
+    <<: *airflow-common
+    container_name: ge_airflow_init
+    restart: on-failure
+    command: >-
+      bash -c "airflow db upgrade && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@trendmart.com || true"
+
+  # ── Airflow Webserver ──────────────────────────────────────────────────────
+  ge_airflow_webserver:
+    <<: *airflow-common
+    container_name: ge_airflow_webserver
+    command: webserver
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ── Airflow Scheduler ──────────────────────────────────────────────────────
+  ge_airflow_scheduler:
+    <<: *airflow-common
+    container_name: ge_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ge_spark_de desativado: o Airflow (trendmart_gold_pipeline) é o orquestrador
+  # exclusivo dos silver jobs. Correr ambos em paralelo causava conflitos de
+  # checkpoint (CONCURRENT_STREAM_LOG_UPDATE) nos silver Iceberg streams.
+  # ge_spark_de:
+  #   build:
+  #     context: ..
+  #     dockerfile: infrastructure/dockerfiles/Dockerfile.spark
+  #   container_name: ge_spark_de
+  #   restart: unless-stopped
+  #   ...  (ver git history)
+
+  # ── Data Sources Simulator ────────────────────────────────────────────────
+  ge_simulator:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.simulator
+    container_name: ge_simulator
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: ge_kafka:9092
+      DB_HOST: ge_postgres
+      DB_PORT: '5432'
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: olist_db
+      MINIO_ENDPOINT: geminio:9000
+      MINIO_ACCESS: minioadmin
+      MINIO_SECRET: minioadmin
+      OLIST_DATA_PATH: /opt/olist_data
+      SESSIONS_PER_SECOND: '0.5'
+      TZ: Europe/Lisbon
+      PYTHONUNBUFFERED: '1'
+    volumes:
+      - ../data_sources:/app
+      - "C:/Users/Alexandr/Desktop/Universidade/3º Ano/Grande Escala/Projeto Versão Final/Projeto-Grande-Escala/Codes/Prepare Data/Amazon/Data:/opt/olist_data:ro"
+    depends_on:
+      ge_kafka:
+        condition: service_healthy
+      ge_postgres:
+        condition: service_healthy
+      ge_minio:
+        condition: service_healthy
+    networks:
+      - ge_network
+
+  # ── Kafka Consumer (clickstream → bronze) ─────────────────────────────────
+  ge_consumer:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.ingestion
+    container_name: ge_consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: ge_kafka:9092
+      MINIO_ENDPOINT: geminio:9000
+      MINIO_ACCESS: minioadmin
+      MINIO_SECRET: minioadmin
+      TZ: Europe/Lisbon
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: '1'
+    volumes:
+      - ../data_engineering:/app
+    working_dir: /app
+    command: python ingestion/consumer.py
+
+    depends_on:
+      ge_kafka:
+        condition: service_healthy
+      ge_minio:
+        condition: service_healthy
+    networks:
+      - ge_network
+
+  # ── CDC Consumer (orders → bronze) ────────────────────────────────────────
+  ge_cdc_consumer:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.ingestion
+    container_name: ge_cdc_consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP: ge_kafka:9092
+      MINIO_ENDPOINT: geminio:9000
+      MINIO_ACCESS: minioadmin
+      MINIO_SECRET: minioadmin
+      TZ: Europe/Lisbon
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: '1'
+    volumes:
+      - ../data_engineering:/app
+    working_dir: /app
+    command: python ingestion/cdc_consumer.py
+    depends_on:
+      ge_kafka:
+        condition: service_healthy
+      ge_kafka_connect:
+        condition: service_healthy
+      ge_minio:
+        condition: service_healthy
+    networks:
+      - ge_network
+
+  # ── File Watcher (reviews → bronze) ───────────────────────────────────────
+  ge_file_watcher:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.ingestion
+    container_name: ge_file_watcher
+    restart: unless-stopped
+    environment:
+      MINIO_ENDPOINT: geminio:9000
+      MINIO_ACCESS: minioadmin
+      MINIO_SECRET: minioadmin
+      TZ: Europe/Lisbon
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: '1'
+    volumes:
+      - ../data_engineering:/app
+    working_dir: /app
+    command: python ingestion/file_watcher.py
+    depends_on:
+      ge_minio:
+        condition: service_healthy
+    networks:
+      - ge_network
+
+  # ── MLflow Tracking Server ────────────────────────────────────────────────
+  ge_mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: ge_mlflow
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://geminio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      TZ: Europe/Lisbon
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri /mlflow/mlruns.db
+        --default-artifact-root s3://mlflow/
+    volumes:
+      - ge_mlflow_data:/mlflow
+    depends_on:
+      ge_minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ge_network
+
+  # ── Analytics Dashboard (Dash + Plotly → Trino) ───────────────────────────
+  ge_dashboard:
+    build:
+      context: ..
+      dockerfile: infrastructure/dockerfiles/Dockerfile.dashboard
+    container_name: ge_dashboard
+    restart: unless-stopped
+    environment:
+      TRINO_HOST: ge_trino
+      TRINO_PORT: '8080'
+      DASHBOARD_PORT: '8050'
+      TZ: Europe/Lisbon
+    ports:
+      - "8050:8050"
+    depends_on:
+      ge_trino:
+        condition: service_healthy
+    networks:
+      - ge_network
+
+# ---------------------------------------------------------------------------
+volumes:
+# ---------------------------------------------------------------------------
+  ge_postgres_data:
+  ge_minio_data:
+  ge_airflow_logs:
+  ge_trino_data:
+  ge_mlflow_data:
+
+# ---------------------------------------------------------------------------
+networks:
+# ---------------------------------------------------------------------------
+  ge_network:
+    driver: bridge
