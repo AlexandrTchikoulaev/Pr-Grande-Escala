@@ -1,0 +1,987 @@
+2. Levantamento e Análise de Requisitos
+
+2.1 Método Adotado
+
+O levantamento de requisitos do sistema TrendMart 2026 foi realizado através de análise de cenário orientada a perfis de utilizador. Em vez de partir de uma lista genérica de funcionalidades, o método estruturou o processo em torno de quatro perfis de analista com objetivos e responsabilidades distintos — Analista de Negócio, Analista de Marketing, Gestor de Operações e Data Scientist — e identificou para cada perfil as perguntas de negócio que o sistema deveria ser capaz de responder, as fontes de dados necessárias para o efeito e as restrições operacionais específicas ao seu contexto de uso.
+
+Esta abordagem por perfis tem três vantagens metodológicas em contexto académico. Primeiro, força a ancoragem dos requisitos em necessidades concretas de negócio em vez de capacidades técnicas abstractas — o resultado é um conjunto de requisitos verificável: um requisito está satisfeito se e só se a pergunta de negócio que lhe corresponde pode ser respondida com o sistema construído. Segundo, facilita a priorização: as funcionalidades partilhadas por múltiplos perfis têm maior prioridade do que as específicas a um único perfil, o que guiou as decisões de arquitectura no sentido de maximizar o valor entregue com os recursos disponíveis. Terceiro, torna a validação dos requisitos sistemática — na secção 2.3, cada requisito é verificado contra a implementação real do sistema, tornando explícita a correspondência entre o que foi especificado e o que foi construído.
+
+Para além dos requisitos funcionais por perfil, foram identificados requisitos não funcionais transversais — relativos a desempenho, idempotência, escalabilidade e reprodutibilidade — que condicionam a arquitectura e não são específicos a nenhum perfil de utilizador.
+
+
+2.2 Organização dos Requisitos Levantados
+
+2.2.1 Perfil 1: Analista de Negócio
+
+O Analista de Negócio é responsável por monitorizar o desempenho comercial da plataforma, identificar categorias de produto em crescimento ou declínio e suportar decisões de portfólio com base em dados históricos de vendas. As suas ferramentas de trabalho são dashboards de business intelligence, tipicamente Power BI ou equivalente, e o seu horizonte temporal de análise combina séries históricas mensais e anuais com análises de variação semana a semana.
+
+Perguntas de negócio que o sistema deve responder para este perfil:
+— Qual foi a receita total, o número de encomendas e o número de clientes únicos no período selecionado?
+— Quais são as categorias de produto com maior contribuição para a receita e como evoluíram ao longo do tempo?
+— Qual é a distribuição geográfica da receita — por estado, região ou cidade — e quais as regiões com maior concentração de clientes?
+— Como se distribuem as vendas ao longo do tempo — por trimestre, mês e semana — e existem padrões de sazonalidade identificáveis?
+— Qual é o valor médio de encomenda por categoria e como varia com a região geográfica do cliente?
+
+Requisitos funcionais derivados:
+RF1.1 — O sistema deve disponibilizar métricas de receita total, volume de encomendas e clientes únicos com filtros por período temporal e categoria de produto.
+RF1.2 — O sistema deve disponibilizar uma vista de desempenho por categoria, com possibilidade de drill-down ao nível do produto individual.
+RF1.3 — O sistema deve disponibilizar uma análise geográfica da receita com granularidade ao nível do estado, região e cidade, com suporte a visualização cartográfica (latitude/longitude).
+RF1.4 — O sistema deve disponibilizar séries temporais de vendas com granularidade diária, semanal, mensal e trimestral.
+RF1.5 — O sistema deve disponibilizar métricas de valor médio de encomenda por categoria e por região geográfica.
+
+2.2.2 Perfil 2: Analista de Marketing
+
+O Analista de Marketing é responsável por identificar categorias com tendência de crescimento de procura, avaliar a eficácia do canal digital na conversão de interesse em vendas e monitorizar o comportamento de navegação dos utilizadores na plataforma. O seu principal interesse está na antecipação de tendências — identificar sinais de crescimento antes que estes se materializem em vendas — e na análise do funil de conversão por categoria, dispositivo e período temporal.
+
+Perguntas de negócio que o sistema deve responder para este perfil:
+— Quais são as categorias com maior crescimento de pesquisa online no período atual e existe correlação identificável entre esse crescimento e as vendas das semanas seguintes?
+— Qual é a taxa de conversão global da plataforma (visualizações que resultam em compra) e como varia por categoria?
+— Qual é a taxa de abandono de carrinho por categoria e que categorias têm as maiores taxas de fricção no funil?
+— Como se distribui o comportamento de navegação por dispositivo (mobile, desktop, tablet) e existem categorias com desempenho de conversão significativamente diferente por canal?
+— Quais as categorias sinalizadas como trending (score > 60 e crescimento > 5%) e qual a sua evolução temporal?
+
+Requisitos funcionais derivados:
+RF2.1 — O sistema deve correlacionar índices de pesquisa semanais (Google Trends) com volumes de vendas da mesma categoria com desfasamento de uma e duas semanas.
+RF2.2 — O sistema deve calcular e disponibilizar a taxa de conversão global (compras / visualizações) e a taxa de abandono de carrinho (abandonos / adições ao carrinho).
+RF2.3 — O sistema deve disponibilizar o funil de comportamento completo — pesquisa, visualização, adição ao carrinho, compra, abandono — por categoria e por período.
+RF2.4 — O sistema deve desagregar métricas de comportamento por dispositivo de acesso.
+RF2.5 — O sistema deve sinalizar categorias em estado de tendência ativa com base em critérios definidos de score e taxa de crescimento.
+RF2.6 — O sistema deve calcular a taxa de aceleração da tendência (derivada segunda do índice de pesquisa) para distinguir tendências em emergência de tendências em maturação.
+
+2.2.3 Perfil 3: Gestor de Operações
+
+O Gestor de Operações é responsável por monitorizar a qualidade logística da plataforma — prazos de entrega, taxas de atraso e correlação entre desempenho logístico e satisfação do cliente — e por gerir as comunicações de suporte com base em tipologia de incidente e geografía. O seu interesse principal é identificar padrões operacionais problemáticos — regiões com alta taxa de atraso, categorias com scores de avaliação baixos, picos de reclamações — antes que estes se traduzam em perda de clientes.
+
+Perguntas de negócio que o sistema deve responder para este perfil:
+— Qual a percentagem de encomendas entregues com atraso e qual o desvio médio face ao prazo prometido, por categoria e por região?
+— Existe correlação entre o atraso de entrega e o score de avaliação deixado pelo cliente?
+— Qual a distribuição de emails de suporte por tipo de incidente (atraso, cancelamento, reclamação) e por região geográfica?
+— Qual o sentimento médio expresso nos emails de suporte e como evoluiu ao longo do tempo?
+— Quais as regiões com maior volume de reclamações de entrega tardia e existe concentração geográfica identificável?
+
+Requisitos funcionais derivados:
+RF3.1 — O sistema deve calcular métricas de entrega (dias totais de entrega, dias de atraso face ao prazo estimado) ao nível do item de encomenda, com possibilidade de agregação por categoria e por região.
+RF3.2 — O sistema deve disponibilizar uma análise de correlação entre atraso de entrega e score de avaliação do cliente.
+RF3.3 — O sistema deve classificar emails de suporte por tipo de incidente com análise de sentimento associada.
+RF3.4 — O sistema deve disponibilizar métricas de sentimento (score contínuo e rótulo qualitativo) agregáveis por período, por incidente e por região geográfica.
+RF3.5 — O sistema deve suportar análise geográfica dos emails de suporte com granularidade ao nível do estado e região do cliente.
+
+2.2.4 Perfil 4: Data Scientist / ML Engineer
+
+O Data Scientist é responsável por desenvolver, treinar e avaliar modelos preditivos de procura por categoria de produto, interpretar os resultados das previsões e monitorizar a qualidade dos modelos ao longo do tempo. O seu interesse central está na disponibilidade de features ricas para treino — lags temporais, rolling statistics, covariáveis externas — na avaliação comparativa de múltiplos modelos e na persistência dos resultados de previsão numa estrutura que permita consumo por dashboards e auditoria histórica das métricas de desempenho.
+
+Perguntas de negócio que o sistema deve responder para este perfil:
+— Qual é o desempenho comparativo dos modelos Prophet, ARIMA e XGBoost por categoria de produto e por métrica-alvo, em termos de MAE, RMSE e MAPE?
+— Quais são as previsões de procura para as oito semanas seguintes por categoria, com e sem intervalo de confiança?
+— Quais as semanas históricas classificadas como anomalias por algum dos modelos?
+— Como evoluiu o desempenho preditivo de cada modelo ao longo do tempo (drift de performance)?
+— Quais as features externas (Google Trends, clickstream, sentimento) com maior contribuição para a previsão por categoria?
+
+Requisitos funcionais derivados:
+RF4.1 — O sistema deve calcular e persistir features semanais por categoria, incluindo lags de 1, 2, 4 e 8 semanas, rolling mean e std de 4 e 8 semanas, e taxa de crescimento semana a semana, para as variáveis-alvo total_orders e total_revenue.
+RF4.2 — O sistema deve incorporar features externas — índice de pesquisa, taxa de crescimento de tendência, contagens de clickstream e sentimento de emails — como covariáveis semanais por categoria.
+RF4.3 — O sistema deve treinar e persistir previsões de três modelos (Prophet, ARIMA, XGBoost) para um horizonte de oito semanas, com identificação das previsões como históricas ou futuras.
+RF4.4 — O sistema deve calcular e persistir métricas de avaliação (MAE, RMSE, MAPE) por modelo e por categoria, com registo das datas de treino e teste.
+RF4.5 — O sistema deve identificar e sinalizar anomalias nas séries históricas.
+RF4.6 — O sistema deve disponibilizar previsões com intervalos de confiança (quando suportado pelo modelo) para consumo em dashboards.
+
+2.2.5 Requisitos Não Funcionais
+
+Os requisitos não funcionais identificados são transversais a todos os perfis e condicionam as decisões de arquitectura do sistema.
+
+RNF1 — Idempotência: qualquer operação de processamento ou carga deve poder ser repetida sem duplicar ou corromper dados. Este requisito aplica-se a todos os ETLs, aos geradores de dados sintéticos, ao pipeline de feature engineering e à persistência de previsões no Data Warehouse. A idempotência é implementada através de padrões ON CONFLICT DO UPDATE no PostgreSQL e verificação HEAD no MinIO antes de qualquer escrita.
+
+RNF2 — Rastreabilidade: os dados originais devem ser preservados em formato imutável na camada Bronze do Data Lake, independentemente de qualquer transformação posterior. Em caso de erro na camada Silver ou no ETL, deve ser possível reprocessar os dados originais sem contactar novamente a fonte.
+
+RNF3 — Reprodutibilidade: dado o contexto académico do projeto, o sistema deve ser completamente reproduzível a partir do código-fonte, sem dependência de dados externos não disponíveis publicamente. Os dados sintéticos (clickstream, emails) devem ser gerados de forma determinística a partir de seeds fixas.
+
+RNF4 — Desempenho analítico: as queries analíticas sobre o Data Warehouse devem executar em tempo aceitável para consumo interativo em Power BI. Este requisito é satisfeito através da criação de índices em todas as colunas de junção e filtragem frequente das tabelas de factos, e pela pré-computação de taxas e métricas derivadas nas vistas SQL.
+
+RNF5 — Escalabilidade horizontal: a arquitectura deve permitir a adição de novas fontes de dados sem alteração das camadas já existentes. A adição de uma nova fonte deve implicar, no limite, a criação de novos módulos de geração, processamento Silver e ETL, sem necessidade de alterar o schema das dimensões partilhadas.
+
+RNF6 — Orquestração auditável: a execução das pipelines de dados deve ser gerida por um orquestrador com suporte a backfill histórico, retentativas automáticas e registo do estado de execução de cada tarefa. Este requisito exclui abordagens de scripts executados manualmente e fundamenta a escolha do Apache Airflow.
+
+
+2.3 Análise e Validação dos Requisitos
+
+A tabela seguinte verifica cada requisito funcional e não funcional contra a implementação real do sistema, identificando o artefacto concreto que satisfaz cada requisito.
+
+Requisito | Estado | Artefacto de Satisfação
+----------|--------|------------------------
+RF1.1 — Receita, encomendas, clientes com filtros | Satisfeito | vw_performance_vendas (sale_id, total_value, order_id, customer_unique_id, full_date, category_name)
+RF1.2 — Desempenho por categoria com drill-down ao produto | Satisfeito | vw_performance_vendas (category_name, product_id, total_value — compatível com treemap no Power BI)
+RF1.3 — Análise geográfica com lat/lng | Satisfeito | vw_performance_vendas (customer_state, customer_region, customer_city, customer_lat, customer_lng)
+RF1.4 — Séries temporais com múltiplas granularidades | Satisfeito | dim_date.{year, quarter, month, week, full_date} propagado para todas as vistas
+RF1.5 — Valor médio de encomenda por categoria/região | Satisfeito | vw_performance_vendas (price, category_name, customer_state — agregável em Power BI)
+RF2.1 — Correlação pesquisa-vendas com desfasamento | Satisfeito | vw_tendencias (search_interest_score, orders_next_1w, orders_next_2w via LEAD window function)
+RF2.2 — Taxa de conversão e abandono | Satisfeito | vw_comportamentos (global_conversion_rate, global_abandon_rate, cat_purchase_rate, cat_abandon_rate)
+RF2.3 — Funil completo de comportamento | Satisfeito | vw_comportamentos (total_searches, total_views, total_add_to_cart, total_purchases, total_cart_abandons)
+RF2.4 — Desagregação por dispositivo | Satisfeito | vw_comportamentos (device — agrupa por mobile/desktop/tablet)
+RF2.5 — Sinalização de categorias trending | Satisfeito | fact_trends.is_trending; vw_tendencias.is_trending
+RF2.6 — Taxa de aceleração da tendência | Satisfeito | fact_trends.trend_acceleration; vw_tendencias.trend_acceleration
+RF3.1 — Métricas de entrega por categoria e região | Satisfeito | vw_performance_vendas (days_to_delivery, delivery_delay_days, is_late_delivery, delay_days_when_late)
+RF3.2 — Correlação atraso vs. avaliação | Satisfeito | vw_performance_vendas (delivery_delay_days, review_score — ambas ao nível order_item)
+RF3.3 — Classificação de emails por incidente e sentimento | Satisfeito | fact_support_emails (issue_type, sentiment_score, sentiment_label); vw_sentimentos
+RF3.4 — Métricas de sentimento por período/incidente/região | Satisfeito | vw_sentimentos (sentiment_score, sentiment_label, issue_type, full_date, customer_state)
+RF3.5 — Análise geográfica dos emails | Satisfeito | vw_sentimentos (customer_state, customer_region, customer_city, customer_lat, customer_lng)
+RF4.1 — Features semanais com lags e rolling stats | Satisfeito | mart_weekly_features ({orders,revenue}_lag_{1,2,4,8}w, {orders,revenue}_roll_{mean,std}_{4,8}w); feature_engineering.py
+RF4.2 — Features externas como covariáveis | Satisfeito | mart_weekly_features (search_interest, trend_growth_rate, is_trending, weekly_views, weekly_add_to_cart, weekly_cart_abandons, avg_sentiment_score, complaint_count)
+RF4.3 — Previsões de três modelos por 8 semanas | Satisfeito | fact_forecasts (model_name in {'Prophet','ARIMA','XGBoost'}, is_future); forecast_models.py
+RF4.4 — Métricas de avaliação por modelo e categoria | Satisfeito | fact_model_metrics (mae, rmse, mape, train_start, train_end, test_start, test_end)
+RF4.5 — Deteção de anomalias | Satisfeito | fact_forecasts.is_anomaly (Prophet: desvio > 2σ do intervalo de confiança; XGBoost: erro relativo > 50%)
+RF4.6 — Intervalos de confiança nas previsões | Satisfeito | fact_forecasts (lower_bound, upper_bound — Prophet e ARIMA; NULL para XGBoost); vw_forecasts
+RNF1 — Idempotência | Satisfeito | ON CONFLICT DO UPDATE em todos os ETLs e em _upsert_forecasts_dw / _upsert_metrics_dw / _upsert_features; HEAD MinIO antes de qualquer escrita
+RNF2 — Rastreabilidade | Satisfeito | Bucket Bronze imutável; Silver nunca sobrescreve Bronze; reprocessamento Silver possível sem re-ingestão
+RNF3 — Reprodutibilidade | Satisfeito | Seeds fixas nos geradores sintéticos; dataset Olist público; código-fonte completo versionado
+RNF4 — Desempenho analítico | Satisfeito | 32 índices criados em create_datawarehouse.py sobre colunas de junção e filtragem frequente; métricas derivadas pré-calculadas nas vistas
+RNF5 — Escalabilidade horizontal | Satisfeito | Nova fonte implica apenas novo gerador + Silver + ETL; dimensões partilhadas (dim_date, dim_category, dim_geography) não requerem alteração
+RNF6 — Orquestração auditável | Satisfeito | Apache Airflow 2.8 com três DAGs (pipeline_olist, pipeline_external, models_dag), backfill desde 2016-09-01, retentativas automáticas e UI de monitorização
+
+Todos os 26 requisitos identificados — 22 funcionais e 4 não funcionais com componentes verificáveis — estão satisfeitos pela implementação. Os requisitos RF4.5 (anomalias) e RF4.6 (intervalos de confiança) merecem nota adicional: as anomalias são detetadas de formas distintas por modelo (desvio face ao intervalo de confiança probabilístico do Prophet; erro de reconstrução relativo no XGBoost), e os intervalos de confiança são nativos em Prophet e ARIMA mas ausentes no XGBoost por construção — o que é uma limitação conhecida do modelo que se reflete explicitamente no schema da tabela (campos lower_bound e upper_bound admitem NULL) e na vista correspondente.
+
+
+3. Implementação do Sistema de Análise
+
+3.1 Apresentação Geral
+
+O sistema TrendMart 2026 é um sistema de análise de dados orientado ao suporte à decisão no domínio do retalho especializado de e-commerce. A sua função central é integrar dados heterogéneos provenientes de quatro fontes distintas — transações históricas, indicadores de procura externa, comportamento de navegação e comunicações de suporte ao cliente — e transformá-los numa infraestrutura analítica unificada capaz de responder a perguntas de negócio que nenhuma das fontes isolada conseguiria endereçar.
+
+Do ponto de vista funcional, o sistema implementa três capacidades principais. A primeira é a integração e preparação de dados: a recolha, limpeza, enriquecimento e consolidação de dados provenientes de fontes com formatos, periodicidades e níveis de estruturação radicalmente diferentes, num repositório central com qualidade garantida. A segunda é a análise descritiva e exploratória: a disponibilização de métricas de desempenho comercial, comportamento do consumidor, logística e suporte ao cliente através de vistas analíticas preparadas para consumo em Power BI. A terceira é a análise preditiva: a previsão de volumes de procura por categoria através de dois modelos de séries temporais — Prophet (Meta) e ARIMA(1,1,1) — com avaliação comparativa do desempenho por métricas quantitativas.
+
+3.1.1 Arquitetura Global
+
+A arquitetura do TrendMart 2026 organiza-se em quatro camadas funcionais distintas, cada uma com responsabilidades bem delimitadas e interfaces explícitas entre si.
+
+A camada de fontes agrega as origens dos dados: a base de dados relacional PostgreSQL com o dataset Olist, o serviço de tendências de pesquisa (Google Trends via SerpAPI), os eventos de clickstream gerados sinteticamente e os emails de suporte ao cliente. Estas fontes apresentam formatos e frequências de atualização distintos, o que justifica a existência de uma camada de preparação intermédia antes da ingestão no Data Warehouse.
+
+A camada de preparação de dados é implementada como um Data Lake com arquitetura medallion em duas camadas — Bronze e Silver — sobre armazenamento de objetos MinIO. O bucket Bronze absorve os dados em formato raw, exatamente como chegam das fontes, sem qualquer transformação. O bucket Silver armazena os dados após limpeza, validação e normalização de tipos, em formato Apache Parquet. A partir da camada Silver, os dados são lidos pelos processos ETL, submetidos à resolução de chaves estrangeiras em memória e carregados diretamente nas tabelas de factos do Data Warehouse.
+
+A camada do Data Warehouse é implementada em PostgreSQL com um modelo dimensional em esquema estrela, composto por quatro tabelas de factos — fact_sales, fact_clickstream, fact_trends e fact_support_emails — e seis dimensões partilhadas: dim_date, dim_category, dim_product, dim_geography, dim_seller e dim_payment. Sobre este schema são definidas seis vistas analíticas SQL que materializam os joins mais frequentes e expõem os dados em formato otimizado para consumo pelo Power BI.
+
+A camada de orquestração é implementada através do Apache Airflow, que gere a execução incremental da pipeline em modo backfill desde setembro de 2016, garantindo idempotência, retentativas automáticas e auditoria de cada batch diário.
+
+3.1.2 Opções de Desenvolvimento
+
+A arquitetura adotada resulta de um conjunto de decisões técnicas fundamentadas, que refletem os requisitos do projeto e as características dos dados envolvidos.
+
+A adoção de uma arquitetura medallion sobre um Data Lake decorre da natureza heterogénea dos dados. Os dados de clickstream chegam como eventos NDJSON sem schema, os emails como documentos EML em texto livre, e os dados de tendências como séries temporais CSV com qualidade variável — nenhum destes formatos pode ser inserido diretamente numa base de dados relacional sem processamento prévio. 
+
+A separação em duas camadas — Bronze (raw) e Silver (limpo e tipado) — permite isolar os dados originais das suas versões transformadas, garantir rastreabilidade completa e tornar o reprocessamento seguro: em caso de erro de transformação, os dados originais estão sempre preservados no Bronze. 
+A opção por duas camadas, em vez das três do modelo medallion clássico (Bronze/Silver/Gold), simplifica a arquitetura ao eliminar uma camada intermédia que, neste contexto, não acrescentaria valor suficiente para justificar a complexidade adicional: a resolução de chaves estrangeiras é feita em memória durante o carregamento para o DW, sem necessidade de persistência numa camada separada.
+
+A escolha do PostgreSQL como sistema de gestão do Data Warehouse justifica-se pela maturidade, pela expressividade do SQL analítico e pela disponibilidade de mecanismos como ON CONFLICT DO UPDATE que simplificam a implementação de upserts idempotentes. A separação física entre a base de dados operacional (olist_db) e a base de dados analítica (data_warehouse) na mesma instância garante isolamento de carga de trabalho sem custo de infraestrutura adicional.
+
+A escolha do Apache Airflow como orquestrador decorre da necessidade de gerir dependências entre tarefas, suportar backfill histórico de dois anos de dados, persistir estado entre execuções e fornecer observabilidade completa sobre o estado de cada batch. O Airflow resolve de forma nativa todos estes requisitos, com um modelo de DAG que torna as dependências entre tarefas explícitas e auditáveis.
+
+A opção por Python como linguagem de processamento — em detrimento de alternativas como Apache Spark — é justificada pelo volume de dados envolvido: 110 mil transações históricas, 18 mil registos de tendências e volumes proporcionais de clickstream e emails são processáveis eficientemente com Pandas e PyArrow sem necessidade de framework distribuído. Esta opção simplifica a infraestrutura, reduz a curva de aprendizagem e mantém o sistema reproduzível num único servidor.
+
+3.1.3 Ferramentas Utilizadas
+
+A Tabela 3.1 apresenta as ferramentas utilizadas no sistema, com a respetiva área de aplicação e justificação.
+
+Ferramenta               | Versão      | Área de Aplicação                         | Justificação
+-------------------------|-------------|-------------------------------------------|------------------------------------------------------
+PostgreSQL               | 14          | Base de dados operacional e DW analítico  | Motor relacional maduro, SQL analítico expressivo, ON CONFLICT nativo
+MinIO                    | RELEASE.2024| Object storage (Data Lake — Bronze/Silver)| Compatível com S3 API, self-hosted, buckets particionados por padrão Hive
+Apache Airflow           | 2.8         | Orquestração de DAGs                      | Backfill histórico, dependências explícitas, UI de monitorização
+Python                   | 3.11        | Processamento e ETL                       | Ecossistema analítico maduro, integração com todas as ferramentas
+pandas                   | 2.x         | Transformações tabulares                  | Operações vectorizadas sobre DataFrames, join/merge eficiente
+PyArrow                  | 14.x        | Leitura/escrita Parquet                   | Formato colunar, compressão Snappy, schema explícito
+boto3                    | 1.34        | Acesso ao MinIO via S3 API                | Cliente oficial AWS S3, compatível com MinIO
+psycopg2                 | 2.9         | Conectividade PostgreSQL                  | Driver nativo, suporte a executemany, controlo de transação
+SQLAlchemy               | 2.x         | ORM e query builder                       | Abstração da conectividade, upserts parametrizados
+Prophet                  | 1.1         | Modelo preditivo de séries temporais      | Robusto a sazonalidade, sem hiperparâmetros críticos, intervalos de confiança nativos
+statsmodels (ARIMA)      | 0.14        | Modelo preditivo alternativo              | ARIMA(1,1,1) como baseline estatístico clássico para comparação
+scikit-learn             | 1.4         | Métricas de avaliação (MAE, RMSE, MAPE)   | API unificada para métricas de regressão
+Power BI Desktop         | 2024        | Dashboards e visualização                 | Consumo direto de views SQL, visualizações geoespaciais
+Léxico próprio (NLP)     | —           | Análise de sentimento em emails           | Classificação léxica determinística, interpretável
+SerpAPI                  | —           | Dados reais de Google Trends              | Acesso programático ao Google Trends sem scraping
+
+
+3.2 Fontes de Dados
+
+O sistema TrendMart integra quatro fontes de dados de natureza fundamentalmente distinta. A diversidade de formatos — SQL relacional estruturado, CSV com perfis temporais, eventos NDJSON em stream e documentos EML não estruturados — é deliberada: representa o tipo de heterogeneidade que qualquer sistema analítico de retalho digital enfrenta em ambiente de produção real.
+
+A Tabela 3.2 apresenta uma caracterização sumária das quatro fontes.
+
+Fonte
+Formato
+Volume aprox.
+Periodicidade
+Tipo
+Olist Brazilian E-Commerce
+SQL/CSV
+~110 000 transações
+Histórico (2016–2018)
+Estruturado
+Tendências de Pesquisa
+CSV
+~18 000 registos
+Semanal
+Semi-estruturado
+Clickstream de Navegação
+NDJSON
+Volume variável
+Diário / tempo real
+Semi-estruturado
+Emails de Suporte ao Cliente
+EML (MIME)
+~18 000 documentos
+Contínuo
+Não estruturado
+
+
+
+3.2.1 Olist Brazilian E-Commerce Dataset
+
+Descrição e Caracterização
+
+O Olist Brazilian E-Commerce Public Dataset é um conjunto de dados público disponibilizado pela empresa brasileira Olist, uma plataforma de e-commerce que agrega vendedores independentes num único marketplace. O dataset cobre o período de setembro de 2016 a outubro de 2018 e contém informação completa sobre o ciclo de vida de uma encomenda, distribuída por oito ficheiros CSV com relações explícitas entre si, carregados integralmente para a base de dados operacional PostgreSQL (olist_db):
+
+— olist_orders_dataset.csv: identificador da encomenda, estado do pedido (order_status) e timestamps de compra, aprovação, expedição e entrega estimada e efetiva. É a tabela central do dataset, com um registo por encomenda.
+— olist_order_items_dataset.csv: detalhe de cada item de encomenda, com preço unitário, valor de frete e identificador de vendedor. Uma encomenda pode ter múltiplos itens, correspondendo cada um a uma linha desta tabela.
+— olist_products_dataset.csv: atributos físicos dos produtos (peso em gramas, dimensões em centímetros) e categoria associada, cobrindo 74 categorias distintas em português.
+— olist_sellers_dataset.csv: localização geográfica dos vendedores por código postal, cidade e estado brasileiro.
+— olist_customers_dataset.csv: localização dos clientes ao nível de código postal, cidade e estado.
+— olist_geolocation_dataset.csv: mapeamento de códigos postais para coordenadas geográficas (latitude e longitude), cidade, estado e região do Brasil. Um mesmo código postal pode ter múltiplas entradas com coordenadas ligeiramente diferentes, reflexo da imprecisão dos dados de GPS.
+— olist_order_payments_dataset.csv: tipo de pagamento (cartão de crédito, boleto bancário, voucher, cartão de débito), valor pago e número de prestações. Uma encomenda pode ter múltiplos registos de pagamento em caso de pagamento misto.
+— olist_order_reviews_dataset.csv: avaliação numérica (1 a 5 estrelas) e comentário textual submetido pelo cliente após receção da encomenda.
+
+No Data Warehouse, estes ficheiros convergem para a tabela de factos fact_sales, com granularidade ao nível do item de encomenda, e para as dimensões dim_product, dim_seller, dim_geography e dim_payment.
+
+Justificação e Utilidade
+
+O dataset Olist constitui a espinha dorsal transacional do sistema por três razões fundamentais. Em primeiro lugar, fornece um histórico de vendas reais com cobertura temporal de dois anos e mais de uma centena de milhares de transações por item — volume suficiente para treinar modelos preditivos com séries temporais estatisticamente significativas por categoria de produto. Sem este histórico, qualquer modelo de previsão de procura operaria exclusivamente sobre dados sintéticos, comprometendo a validade académica dos resultados.
+Em segundo lugar, a granularidade do dataset — ao nível do item de encomenda, com preço, frete, vendedor, localização geográfica do cliente e data de compra — permite construir dimensões ricas que sustentam análises multidimensionais sofisticadas. A disponibilidade de timestamps de expedição e entrega (estimada e efetiva) permite ainda calcular métricas logísticas derivadas — tempo total de entrega e desvio face à data prometida — que constituem indicadores de qualidade operacional relevantes para o negócio.
+Em terceiro lugar, o dataset é amplamente utilizado em projetos académicos e de investigação, o que facilita a comparação metodológica com trabalhos anteriores. A sua proveniência pública e documentada assegura a reprodutibilidade total do projeto.
+A nível de utilidade analítica, o Olist alimenta diretamente as análises de desempenho comercial (GMV por categoria, valor médio de encomenda, sazonalidade de vendas), as análises logísticas (tempo de entrega por região, taxa de atraso) e constitui a variável-alvo — número de encomendas e receita por categoria/semana — dos modelos preditivos de séries temporais.
+
+
+Criação / Carregamento
+
+O dataset Olist não é gerado sinteticamente — é um dataset público obtido diretamente da plataforma Kaggle e incorporado no projeto como dados históricos reais. O processo de carregamento para o sistema segue dois passos sequenciais, executados pelos scripts create_olist_db.py e populate_olist_db.py.
+O primeiro passo cria o schema relacional na base de dados PostgreSQL (olist_db), definindo as tabelas com as suas colunas, tipos de dados e relações de chave estrangeira. A ordem de criação respeita a hierarquia de dependências: geolocation → customers/sellers → products/orders → order_items/payments/reviews. A tabela category, que faz o mapeamento entre nomes de categoria em português e inglês, é criada separadamente e referenciada por products.
+O segundo passo carrega os dados dos ficheiros CSV — previamente transformados para Parquet por transform.py para garantir tipos de dados consistentes — usando SQLAlchemy com pandas. Cada ficheiro é lido para um DataFrame e inserido na tabela correspondente via to_sql. O carregamento é feito por ordem de dependência referencial para não violar as constraints de chave estrangeira. O campo customer_unique_id da tabela customers é particularmente relevante: enquanto customer_id é único por transação (o mesmo cliente pode ter vários customer_ids), customer_unique_id identifica o cliente real e é o campo usado como user_id no gerador de clickstream.
+Após o carregamento completo, a olist_db fica disponível como fonte de consulta para todos os geradores sintéticos das restantes fontes de dados, que a usam para garantir coerência entre produtos, clientes e eventos gerados.
+
+
+
+3.2.2 Dados de Tendências de Pesquisa (Google Trends)
+
+Descrição e Caracterização
+
+A fonte de tendências de pesquisa fornece índices semanais de interesse de pesquisa online por categoria de produto no mercado brasileiro, obtidos através da SerpAPI — um serviço que fornece acesso programático aos dados do Google Trends. Para cada categoria do dataset Olist, é obtida uma série temporal semanal de scores de interesse normalizado numa escala de 0 a 100, onde 100 representa o pico máximo de pesquisa para essa categoria no período considerado, e 0 representa ausência de dados de pesquisa comparável.
+
+Para categorias sem dados reais disponíveis via SerpAPI (por ausência de histórico ou falha persistente da API), é ativado um mecanismo de fallback que gera uma série temporal sintética estatisticamente plausível: parte de um valor base aleatório, aplica crescimento linear suave, sazonalidade sinusoidal anual e ruído gaussiano, com spikes ocasionais para simular picos de procura esporádicos. Esta abordagem garante que todas as 74 categorias têm uma série temporal completa no período de simulação.
+
+Cada registo desta fonte contém, para além do score de pesquisa semanal, três métricas derivadas calculadas durante o processamento:
+— trend_growth_rate: taxa de crescimento percentual face à semana anterior, calculada como (score_t − score_{t−1}) / score_{t−1};
+— trend_acceleration: variação da taxa de crescimento entre semanas consecutivas, equivalente à derivada segunda do score de interesse. Um valor positivo indica que o crescimento está a acelerar;
+— is_trending: indicador booleano que sinaliza categorias em estado de tendência ativa, ativado quando o score supera 60 e a taxa de crescimento excede 5%.
+
+Justificação e Utilidade
+
+A inclusão desta fonte fundamenta-se na hipótese central do projeto: os consumidores pesquisam online antes de comprar, e o volume de pesquisa por uma categoria antecipa as vendas em um a dois períodos temporais. Sem esta fonte, o sistema estaria limitado a detetar tendências apenas após estas se materializarem em transações — o que invalida o objetivo de identificação antecipada.
+
+A métrica trend_acceleration é particularmente relevante para distinguir categorias em expansão rápida de categorias em crescimento estável mas maduro: uma categoria com score crescente mas sem aceleração tem um perfil de mercado diferente de uma categoria com aceleração positiva e crescente, que é precisamente o sinal de emergência de tendência que o sistema visa capturar.
+
+A nível de utilidade analítica, esta fonte alimenta a view vw_tendencias, que correlaciona o índice de pesquisa com as vendas da mesma semana e categoria, e constitui o principal conjunto de features externas do modelo preditivo Prophet.
+
+Criação / Geração
+
+O script generate_trends.py é responsável por gerar um ficheiro CSV por categoria Olist, armazenado localmente em data/temp/trends/{category_name}.csv. O processo executa as seguintes etapas:
+1. Enumeração de categorias. O script liga-se à olist_db e executa uma query que obtém os pares (product_category_name, product_category_name_english) distintos da tabela products com join à tabela category. As 74 categorias resultantes são a lista exaustiva a processar.
+2. Construção do calendário semanal. Com base nas datas de início e fim da simulação definidas em config.py, o script calcula a sequência de segundas-feiras que cobre o período inteiro. Cada segunda-feira representa o início de uma semana de dados.
+3. Chamada à SerpAPI (caminho principal). Para cada categoria, o script seleciona a keyword a usar na pesquisa: preferencialmente o nome inglês (product_category_name_english) com underscores substituídos por espaços; em caso de ausência, usa o nome português. É enviado um pedido HTTP GET ao endpoint https://serpapi.com/search com os parâmetros engine=google_trends, geo=BR e o intervalo de datas da simulação. O resultado inclui um array timeline_data com timestamps UNIX e extracted_value (score 0–100) para cada semana. A chamada tem retry automático até 3 tentativas, com backoff em caso de rate limit HTTP 429. Entre chamadas sucessivas, o script aguarda 1.5 segundos para não exceder os limites da API.
+4. Alinhamento temporal. Como o Google Trends pode devolver timestamps que não coincidem exatamente com as segundas-feiras calculadas, o script aplica uma janela de tolerância de ±3 dias: para cada semana esperada, procura o score mais próximo nesse intervalo. Semanas sem dados recebem o score da semana anterior (forward-fill).
+5. Fallback sintético. Se a SerpAPI não devolver dados para uma categoria, o script ativa o gerador sintético, que produz uma série com as seguintes componentes sobrepostas: valor base aleatório entre 20 e 70; tendência linear crescente com taxa entre 1% e 8% ao ano; sazonalidade sinusoidal com amplitude aleatória entre 5 e 20 pontos, com período de 365 dias; ruído gaussiano com desvio-padrão de 3 pontos; spikes ocasionais com probabilidade 3% por semana, de amplitude entre 10 e 25 pontos. O resultado é truncado ao intervalo [0, 100].
+6. Cálculo das métricas derivadas. Para cada semana, independentemente de a série ser real ou sintética, o script calcula as três métricas derivadas: trend_growth_rate como variação percentual face à semana anterior; trend_acceleration como diferença entre o crescimento atual e o crescimento implícito no score corrente; is_trending como combinação booleana de score > 60 e trend_growth_rate > 0.05.
+7. Armazenamento local. O DataFrame resultante — com colunas date, keyword, search_interest_score, trend_growth_rate, trend_acceleration, is_trending e category_name — é escrito como CSV em data/temp/trends/{category_name}.csv. O script é idempotente: categorias cujo ficheiro já existe são saltadas, permitindo retomar interrupções sem reprocessar categorias já concluídas.
+
+
+3.2.3 Dados de Clickstream de Navegação
+
+Descrição e Caracterização
+
+A fonte de clickstream de navegação simula o registo de eventos de comportamento de utilizadores na plataforma de e-commerce, equivalente ao que seria capturado por um sistema de web analytics em tempo real. Os eventos são gerados sinteticamente com base nos produtos e clientes reais do dataset Olist, garantindo coerência com o contexto transacional. Cada evento é representado como um documento JSON e armazenado no MinIO em formato NDJSON (Newline-Delimited JSON), com partição hierárquica por data (year/month/day).
+
+O gerador produz, por omissão, 120 sessões por dia para todo o período de simulação. Cada sessão simula um funil de conversão com lógica probabilística: todos os utilizadores iniciam com um evento search seguido de view; com probabilidade de 40% adicionam o produto ao carrinho (add_to_cart); destes, 45% concluem a compra (purchase) e os restantes abandonam o carrinho (cart_abandon); utilizadores que não adicionam ao carrinho geram um evento bounce.
+
+Cada evento contém os seguintes campos: 
+
+event_id (UUID único por evento)
+session_id (partilhado por todos os eventos da mesma sessão)
+user_id, timestamp (ISO 8601 com hora exacta)
+event_type
+product_id
+category
+price (amostrado de uma distribuição gaussiana centrada na média histórica do produto)
+state (estado brasileiro do utilizador)
+device (mobile, desktop ou tablet)
+
+Justificação e Utilidade
+
+O clickstream complementa os dados transacionais ao fornecer sinais comportamentais intermédios que as vendas concluídas são incapazes de capturar. Um utilizador que visualiza um produto e abandona o carrinho está a gerar um sinal de interesse não convertido — informação relevante sobre categorias com fricção no processo de compra, que pode indicar problemas de preço, stock insuficiente ou falta de confiança do consumidor.
+
+A proporção entre add_to_cart e purchase por categoria constitui um indicador direto de fricção no funil. A razão entre bounce e view oferece um indicador de relevância percebida. A taxa de conversão por dispositivo (mobile vs. desktop) permite identificar canais com experiência de utilizador subótima.
+
+Do ponto de vista arquitetural, a ingestão desta fonte a partir de ficheiros NDJSON em MinIO demonstra a capacidade do sistema de processar dados semi-estruturados sem schema fixo, um requisito central para qualquer pipeline de dados moderna orientada à escala.
+
+Criação / Geração
+
+O script generate_clickstream.py gera todos os eventos do período de simulação e armazena-os localmente em ficheiros NDJSON em data/temp/clickstream/. O processo segue as etapas descritas abaixo.
+
+1. Carregamento de dados de referência. O script liga-se à olist_db e executa duas queries. A primeira obtém até 5 000 produtos com os campos product_id, product_category_name, product_category_name_english, e os valores avg_price e std_price calculados a partir dos preços históricos na tabela order_items. A segunda obtém até 2 000 clientes com os campos customer_unique_id e customer_state. Estes dados são mantidos em memória durante toda a geração, servindo como universo de amostragem.
+
+2. Geração por dia. Para cada dia do período de simulação, o script gera N sessões (120 por omissão, configurável via argumento --sessions-per-day). O timestamp de início de cada sessão é calculado adicionando um offset aleatório uniforme em [0, 86 399] segundos ao início do dia, simulando a distribuição natural do tráfego ao longo das 24 horas. Os eventos de cada sessão são depois ordenados cronologicamente antes da escrita.
+
+3. Simulação de sessão. Para cada sessão, o script seleciona aleatoriamente um produto e um cliente do pool carregado. O estado geográfico é retirado do campo customer_state do cliente; o dispositivo é amostrado uniformemente entre mobile, desktop e tablet. O preço do evento é amostrado de uma distribuição gaussiana com média avg_price e desvio-padrão std_price, truncada a um mínimo de 1.0, o que simula variação de preço entre sessões para o mesmo produto. O session_id é um UUID v4 novo por sessão; o event_id é um UUID v4 novo por evento.
+
+A sequência de eventos dentro da sessão segue o funil probabilístico configurado em config.py:
+O evento search é sempre gerado primeiro, com o timestamp base da sessão.
+O evento view é gerado 3 a 15 segundos depois do search.
+Com probabilidade P_ADD_TO_CART (40%), é gerado um evento add_to_cart, 5 a 60 segundos após o view. Desse add_to_cart, com probabilidade P_PURCHASE (45%), o evento final é purchase; caso contrário é cart_abandon. O intervalo até ao evento final é de 10 a 120 segundos.
+Se o P_ADD_TO_CART não se verificar, o evento final da sessão é bounce, gerado imediatamente após o view.
+
+Todos os eventos de uma sessão partilham os campos session_id, user_id, product_id, category, category_en, price, state e device, variando apenas em event_id, event_type e timestamp.
+
+4. Armazenamento local. Cada dia é escrito num ficheiro NDJSON individual em data/temp/clickstream/year=YYYY/month=MM/day=DD/part-00000.json. Cada linha do ficheiro é o JSON serializado de um evento. Os eventos são ordenados por timestamp antes da escrita, reproduzindo a ordem de chegada que um sistema de stream teria. O script é idempotente: dias cujo ficheiro part-00000.json já existe são saltados, permitindo retomar a geração sem duplicações.
+
+
+3.2.4 Emails de Suporte ao Cliente
+
+Descrição e Caracterização
+
+A fonte de emails de suporte ao cliente simula comunicações escritas entre clientes e o serviço de apoio da TrendMart, nomeadamente reclamações de atraso de entrega, pedidos de cancelamento e reclamações de produto. 
+Os emails são gerados sinteticamente a partir de eventos reais do dataset Olist — ordens com atraso de entrega (delivered > estimated), ordens canceladas e ordens com avaliação de 1 ou 2 estrelas — e armazenados individualmente como ficheiros EML (formato MIME RFC 2822) no MinIO, com partição por data de envio.
+
+Cada email contém cabeçalhos MIME completos (From, To, Subject, Date, Message-ID) e corpo de texto em português, construído a partir de templates parametrizados com dados reais como o identificador da encomenda, a data de compra e o prazo de entrega. O email_id é gerado de forma determinística através de SHA-256 sobre a concatenação de order_id e issue_type, garantindo que re-executar o gerador para a mesma ocorrência produz sempre o mesmo identificador.
+
+Após processamento na camada Silver, cada registo contém: email_id, data de envio, assunto, issue_type (late_delivery, cancellation ou complaint), sentiment_score (valor contínuo em [-1, 1] calculado por análise de palavras-chave), sentiment_label (positive, neutral ou negative), word_count, order_id extraído por regex do texto, e a chave MinIO do ficheiro original (minio_key).
+
+Justificação e Utilidade
+
+Esta fonte introduz no sistema uma dimensão qualitativa que as métricas quantitativas de vendas e pesquisa não conseguem capturar: a perceção subjetiva do cliente sobre a sua experiência de compra. O sentimento expresso nos emails de suporte é um indicador antecipado independente — categorias com deterioração de sentimento tendem a apresentar queda de vendas nos períodos seguintes, enquanto a melhoria de sentimento precede frequentemente acelerações de procura.
+
+A análise por issue_type fornece informação operacional concreta: um aumento de reclamações do tipo late_delivery por região geográfica pode indicar problemas logísticos localizados antes que o impacto nas avaliações públicas se torne visível. Este tipo de sinal, cruzado com os dados geográficos de dim_geography, tem valor imediato para a gestão de operações e stocks regionais.
+
+Do ponto de vista técnico, o armazenamento em MinIO como ficheiros EML não estruturados e a sua subsequente ingestão para o Data Warehouse demonstra a capacidade do sistema de processar dados não estruturados heterogéneos para além dos formatos tabulares convencionais, cobrindo assim o espectro completo de estruturação de dados.
+
+Criação / Geração
+
+O script generate_emails.py gera um ficheiro .eml por ocorrência qualificada, armazenado localmente em data/temp/emails/. O processo divide-se em três fases, uma por tipo de issue, executadas sequencialmente.
+
+1. Carregamento de ocorrências qualificadas. O script liga-se à olist_db e executa três queries distintas para obter os eventos que justificam um email de suporte:
+
+Entregas atrasadas: seleciona ordens onde order_delivered_customer_date é posterior a order_estimated_delivery_date, com join aos clientes para obter customer_city, customer_unique_id e customer_zip_code_prefix. Calcula também o total pago por encomenda via sum dos preços em order_items.
+Cancelamentos: seleciona ordens com order_status = 'canceled', com join aos clientes e sum de (price + freight_value) como valor total.
+Reclamações: seleciona reviews com review_score ≤ 2, com join às ordens e clientes, incluindo o campo review_comment_message para uso opcional no corpo do email.
+
+2. Construção do email. Para cada ocorrência, o script calcula um email_id determinístico como os primeiros 32 hexadecimais do hash SHA-256 de "{order_id}:{issue_type}". Este mecanismo garante idempotência: re-executar o script para o mesmo order_id e issue_type produz o mesmo email_id e o ficheiro existente é saltado sem reprocessamento.
+O timestamp do email é calculado com variação aleatória relativamente ao evento-gatilho: para entregas atrasadas, entre 1 a 3 dias após a data de entrega real; para cancelamentos, entre 3 a 7 dias após a data de compra; para reclamações, entre 1 a 2 dias após a data da review. A hora dentro do dia é amostrada aleatoriamente entre as 8:00 e as 20:00, simulando um horário realista de envio por parte do cliente.
+O corpo do email é construído a partir de templates parametrizados, com duas variantes por issue_type escolhidas aleatoriamente. Os templates recebem como parâmetros: short_id (primeiros 8 caracteres do order_id em maiúsculas), purchase_date, estimated_date, delay_days, city e value, conforme o tipo. Para reclamações, o template inclui um contexto diferenciado consoante o review_score (1 ou 2), e pode incorporar o comentário original da review se este não estiver vazio. O endereço de remetente é construído como cliente.{primeiros_8_chars_user_id}@email.com.br; o destinatário é sempre suporte@olist.com.br.
+O ficheiro EML é construído usando a biblioteca email.mime.text.MIMEText com encoding UTF-8, com os cabeçalhos From, To, Subject, Date, Message-ID e o campo custom X-Customer-Zip quando disponível.
+
+3. Armazenamento local. Cada ficheiro é guardado em data/temp/emails/year=YYYY/month=MM/day=DD/{email_id}.eml, onde a data de partição é a data do email (não a da ocorrência original). A estrutura de diretórios é criada automaticamente. O script é idempotente por construção: o conjunto de email_ids já existentes é carregado no início e qualquer ocorrência já processada é saltada sem reescrita.
+
+
+Complementaridade entre as Fontes
+
+As quatro fontes de dados não operam em silos independentes — a sua integração num modelo dimensional partilhado é o que confere ao sistema a sua capacidade analítica distintiva. As dimensões dim_date, dim_category, dim_product e dim_geography são partilhadas por múltiplas tabelas de factos, permitindo queries que cruzam sinais de fontes distintas numa única operação analítica.
+
+A cadeia de sinais que o sistema explora segue uma sequência temporal identificável: os emails de suporte e o clickstream capturam os primeiros sinais de mudança de comportamento; o volume de pesquisa regista o interesse crescente antes da intenção de compra; e as vendas transacionais confirmam, com atraso de um a dois períodos, a materialização da tendência. Esta integração de quatro janelas temporais num único sistema é o que permite ao TrendMart 2026 operar em modo preditivo em vez de meramente descritivo.
+
+
+3.3 Área de Preparação de Dados
+
+3.3.1 Justificação da Abordagem
+
+A área de preparação de dados do TrendMart é implementada como um Data Lake sobre armazenamento de objetos MinIO, organizado em duas camadas progressivas de qualidade: Bronze e Silver. Esta abordagem foi escolhida em detrimento de alternativas como um Operational Data Store (ODS) ou uma área de staging relacional pelas razões que se detalham a seguir.
+
+A natureza semi-estruturada e não estruturada de três das quatro fontes de dados — clickstream em NDJSON, emails em EML, tendências em CSV com qualidade variável — exclui à partida a inserção direta numa base de dados relacional sem transformação prévia. Um ODS relacional exigiria um schema fixo na entrada, o que é incompatível com a variabilidade do formato de emails e com a ausência de schema formal no clickstream. A arquitetura de Data Lake resolve este problema ao aceitar qualquer dado no seu formato original na camada Bronze, adiar a imposição de schema para a camada Silver e só então promover os dados para o Data Warehouse.
+
+A separação em duas camadas traz três vantagens concretas: (1) rastreabilidade — em caso de erro de transformação, os dados originais estão sempre preservados no Bronze, permitindo reprocessamento sem re-ingestão da fonte; (2) idempotência — cada camada verifica a existência do ficheiro de destino antes de processar, tornando o reprocessamento seguro mesmo após falhas parciais; (3) separação de responsabilidades — os geradores de dados escrevem apenas no Bronze, sem conhecimento das regras de qualidade da camada Silver, mantendo os dois processos independentes e substituíveis.
+
+A opção por duas camadas, em vez das três do modelo medallion clássico (Bronze/Silver/Gold), simplifica deliberadamente a arquitetura. A resolução de chaves estrangeiras — que no modelo completo seria feita numa camada Gold intermédia — é realizada em memória pelos processos ETL no momento do carregamento para o DW, sem necessidade de persistência adicional no Data Lake. Esta decisão elimina um bucket de armazenamento, um módulo de processamento e um nível de complexidade operacional, sem perda de rastreabilidade ou integridade dos dados.
+
+O MinIO foi escolhido como substrato de armazenamento por ser self-hosted, compatível com a AWS S3 API (o que permite reutilizar o cliente boto3 sem alteração de código) e por suportar particionamento hierárquico de objetos com padrão Hive (year=, month=, day=), diretamente compreensível pelo PyArrow e compatível com frameworks distribuídos como Apache Spark, tornando a migração para um ambiente de maior escala numa evolução natural e sem mudança de schema.
+
+3.3.2 Camada Bronze
+
+O bucket Bronze é o ponto de entrada de todos os dados semi-estruturados e não estruturados no sistema. Os dados são armazenados exatamente como chegam das fontes, sem qualquer transformação, preservando a fidelidade total ao dado original. Esta camada serve como fonte de verdade histórica — mesmo que o processamento Silver seja alterado ou reprocessado, os dados originais estão sempre disponíveis para nova transformação sem necessidade de re-ingestão.
+
+Extração do Armazenamento Local para o Bronze
+
+Os dados não chegam diretamente ao Bronze — passam antes por uma etapa intermédia de geração local. Os geradores produzem os ficheiros num diretório temporário (data/temp/) no sistema de ficheiros local da máquina onde corre o pipeline. De seguida, os scripts de ingestão Bronze (bronze_clickstream.py, bronze_emails.py, bronze_trends.py) leem esses ficheiros locais e carregam-nos para o MinIO através da API S3-compatível, usando put_object. 
+Esta separação entre geração e ingestão permite re-executar qualquer uma das fases de forma independente: os dados gerados localmente podem ser recarregados para o Bronze sem novo processamento, e o Bronze pode ser repovoado a partir de um backup local sem contactar qualquer fonte externa. Antes de cada carregamento, o script verifica se o objecto já existe no MinIO; apenas os ficheiros em falta são transferidos, tornando o processo de ingestão local-para-Bronze igualmente idempotente.
+
+Organização dos dados no Bronze
+
+Os dados de clickstream são armazenados em formato NDJSON (uma linha por evento JSON) com partição hierárquica por data, seguindo o padrão:
+    bronze/clickstream/year=2017/month=03/day=15/part-00000.json
+
+Esta estrutura de partição permite ao processamento Silver localizar exactamente o ficheiro de cada dia sem necessidade de listar todo o bucket. A partição por padrão Hive é diretamente compreensível pelos frameworks de processamento distribuído que possam vir a substituir Python num cenário de escalamento.
+
+Os emails de suporte são armazenados individualmente como ficheiros EML com o padrão:
+    bronze/support_emails/year=2017/month=03/day=15/{email_id}.eml
+
+O email_id é gerado de forma determinística por SHA-256 sobre a concatenação de order_id e issue_type, garantindo que a re-execução do gerador para a mesma ocorrência produz sempre o mesmo nome de ficheiro — o que torna a idempotência da geração trivial e verificável por simples listagem do bucket.
+
+Os dados de tendências de pesquisa são armazenados como CSV por categoria, sem partição temporal:
+    bronze/google_trends/cama_mesa_banho.csv
+    bronze/google_trends/informatica_acessorios.csv
+
+Ao contrário do clickstream e dos emails, cada ficheiro de trends contém a série temporal completa da categoria para todo o período de simulação. Esta opção reflete a natureza dos dados de Google Trends: são obtidos por chamada à API por categoria, e a unidade natural de atualização é a categoria completa, não o dia individual.
+
+Idempotência da Geração
+
+Todos os geradores implementam verificação de idempotência antes de escrever qualquer dado no Bronze. Para o clickstream e emails, a verificação é feita ao nível do ficheiro diário ou do email_id individual; para os trends, ao nível do ficheiro de categoria. Em todos os casos, a verificação é feita através de uma chamada HEAD ao MinIO (operação O(1), sem transferência de dados), que retorna sucesso se o objecto já existir. Se o ficheiro existir, o processamento desse dia ou categoria é saltado sem qualquer operação de escrita. Esta propriedade garante que em caso de falha parcial, reinício do gerador ou execução repetida, nenhum dado é duplicado ou sobrescrito no Bronze.
+
+3.3.3 Camada Silver
+
+A camada Silver tem como objetivo transformar os dados crus, heterogéneos e potencialmente inconsistentes do Bronze em registos limpos, tipados e semanticamente enriquecidos, armazenados em formato Apache Parquet com compressão Snappy. É nesta camada que se concentra toda a lógica de qualidade de dados do Data Lake — a camada Bronze apenas preserva; a camada Silver garante.
+
+Formato de Saída: Apache Parquet
+
+Os dados Silver são armazenados em Apache Parquet com engine PyArrow. Este formato foi escolhido em detrimento dos formatos originais (NDJSON, EML ou CSV) por três razões. Primeiro, o Parquet é um formato colunar: os valores de cada coluna são armazenados contiguamente em disco, permitindo leituras selectivas de apenas as colunas necessárias e reduzindo substancialmente o volume de I/O em operações analíticas. Segundo, o Parquet incorpora metadados de schema com tipos de dados explícitos, eliminando a necessidade de inferência de tipos na leitura — um ficheiro Silver garante que o campo timestamp é sempre datetime64[ns] e price é sempre float64, independentemente do que chegou no Bronze. Terceiro, a compressão Snappy aplicada automaticamente pelo PyArrow reduz o tamanho dos ficheiros para 20-40% do equivalente em JSON sem penalizar significativamente a velocidade de leitura.
+
+A escrita é feita em memória (io.BytesIO) antes do envio para o MinIO via put_object, evitando ficheiros temporários em disco e garantindo atomicidade: ou o ficheiro é escrito na íntegra, ou não é escrito de todo.
+
+Processamento do Clickstream
+
+O processamento Silver do clickstream aplica cinco etapas sequenciais sobre cada partição diária do Bronze. 
+
+Primeiro, parsing do NDJSON com descarte silencioso de linhas com JSON inválido ou vazias — torna o processamento robusto a ficheiros parcialmente corrompidos. 
+Segundo, eliminação de registos sem event_id ou timestamp, os dois identificadores irrecuperáveis sem os quais o evento não tem significado. 
+Terceiro, filtragem por tipo de evento: apenas são aceites os seis valores válidos do vocabulário controlado — search, view, add_to_cart, purchase, bounce e cart_abandon — sendo qualquer outro valor descartado para evitar que erros de tipagem na geração se propaguem para o DW. 
+Quarto, normalização de tipos: price convertido para float64 com clip a zero (preços negativos são artefactos de geração sem significado de negócio) e timestamp convertido para datetime64[ns], com descarte de timestamps não parseáveis. 
+Quinto, desduplicação por event_id, conservando a primeira ocorrência e eliminando duplicados que possam surgir de reenvios ou sobreposições de janelas de geração.
+
+O schema de saída Silver do clickstream é fixo e explícito, com 11 colunas tipadas: event_id (string), session_id (string), user_id (string), timestamp (datetime64[ns]), event_type (string), product_id (string, nullable), category (string), category_en (string), price (float64), state (string) e device (string). Colunas ausentes no Bronze são adicionadas como None, garantindo consistência do schema independentemente das variações na geração.
+
+Processamento dos Emails de Suporte
+
+O processamento Silver dos emails envolve quatro operações sobre cada partição diária de ficheiros EML. 
+
+Primeiro, inventário e parsing MIME: todos os ficheiros .eml da partição são listados via paginador list_objects_v2, e cada um é descarregado e parseado pela biblioteca standard email.message_from_bytes, extraindo o assunto (Subject), o corpo em texto simples e a data de envio do cabeçalho Date. Quando o cabeçalho Date está ausente ou é inválido, a data é inferida das componentes year/month/day da chave MinIO do ficheiro. 
+Segundo, classificação do tipo de incidente por correspondência de substrings no texto combinado de assunto e corpo, com prioridade determinística: verifica primeiro indicadores de cancelamento, depois de entrega tardia, classificando como reclamação genérica em caso de ausência de ambos. 
+Terceiro, cálculo do score de sentimento por léxico com 26 palavras negativas e 11 positivas, calculado como (pos − neg) / (pos + neg) e arredondado a 4 casas decimais — o rótulo qualitativo é atribuído por limiares: positive para score > 0,15, negative para score < −0,15 e neutral nos restantes casos. 
+Quarto, extracção do order_id por expressão regular que procura uma sequência de 8 caracteres hexadecimais delimitada por fronteiras de palavra no assunto e corpo do email.
+
+Processamento dos Dados de Tendências
+
+O processamento Silver dos trends aplica quatro transformações sobre cada ficheiro CSV de categoria no Bronze. 
+
+Primeiro, conversão e validação do campo date para datetime com descarte de datas inválidas, seguida de reconversão para string YYYY-MM-DD para serialização compatível com Parquet. 
+Segundo, limitação do search_interest_score ao intervalo [0, 100] com preenchimento de nulos por zero — a escala do Google Trends é definida neste intervalo por especificação da API. 
+Terceiro, conversão de trend_growth_rate e trend_acceleration para float64 com preenchimento de nulos por 0.0, e sanitização de valores NaN e Inf que possam resultar de divisões por zero no cálculo de taxa de crescimento para semanas com score zero. 
+Quarto, normalização de is_trending para booleano e truncagem do campo keyword a 200 caracteres, com preenchimento pelo nome da categoria quando ausente.
+
+
+3.4 Área de Dados do Sistema de Análise
+
+3.4.1 Modelo Dimensional — Escolhas de Design
+
+O sistema de dados do TrendMart 2026 implementa um modelo dimensional em esquema estrela no Data Warehouse PostgreSQL. A escolha de um modelo dimensional — em detrimento de uma modelação relacional normalizada (3NF) — decorre dos padrões de acesso analítico dominantes: queries que atravessam múltiplas dimensões (por exemplo, "receita por categoria, por mês, por região"), contagens e agregações sobre grandes volumes de factos, e filtragens sobre atributos descritivos das dimensões. O esquema estrela minimiza o número de joins necessários por query analítica e torna as estruturas de dados imediatamente compreensíveis para analistas sem conhecimento do modelo operacional subjacente.
+
+O processo de conceção do modelo dimensional seguiu os quatro passos do método de Kimball.
+
+Passo 1 — Identificação dos Processos de Negócio
+
+Foram identificados quatro processos de negócio distintos mas complementares, cada um correspondendo a uma tabela de factos:
+(i) Vendas e Encomendas: o ciclo de vida de uma encomenda desde a compra até à entrega, com métricas financeiras e logísticas;
+(ii) Comportamento de Navegação: os eventos que os utilizadores geram na plataforma, que permitem analisar o funil de conversão digital;
+(iii) Procura de Mercado: os dados de interesse de pesquisa por categoria, que permitem correlacionar tendências externas com o comportamento de vendas interno;
+(iv) Suporte ao Cliente: os emails de reclamação e apoio, que revelam os problemas mais frequentes e o sentimento dos clientes.
+
+A modelação simultânea dos quatro processos justifica-se pela complementaridade analítica: as vendas dizem o que foi comprado, o clickstream diz como se chegou à compra, os trends dizem o que estava em crescimento externamente, e os emails dizem o que correu mal após a compra.
+
+Passo 2 — Definição da Granularidade
+
+A granularidade define o nível de detalhe de cada linha numa tabela de factos — é a decisão mais crítica do processo de design, pois é irreversível após a carga de dados.
+
+Para fact_sales, a granularidade é ao nível do item de encomenda: cada linha representa um produto específico dentro de uma encomenda. Esta opção permite analisar métricas ao nível do produto (preço, categoria, vendedor) e não apenas ao nível da encomenda, sendo a chave natural o par (order_id, order_item_id) concatenado em sale_id.
+
+Para fact_clickstream, a granularidade é ao nível do evento individual: cada linha representa um clique, visualização, adição ao carrinho ou compra, identificada por um event_id único. Esta granularidade permite reconstruir sessões completas e calcular taxas de conversão em qualquer ponto do funil.
+
+Para fact_trends, a granularidade é ao nível semanal por categoria e região geográfica: cada linha representa o score de interesse de pesquisa de uma categoria, numa semana, numa região. A chave natural é o triplo (date_id, category_id, geo_region).
+
+Para fact_support_emails, a granularidade é ao nível do email individual: cada email de suporte é um registo distinto, identificado por email_id.
+
+Passo 3 — Identificação das Dimensões
+
+Foram definidas seis dimensões, partilhadas entre as quatro tabelas de factos:
+
+dim_date: responde ao quando. Criada como calendário completo de 2016 a 2025 (3 653 datas), com atributos derivados: ano, trimestre, mês, nome do mês, semana ISO 8601, dia da semana, nome do dia e flag de fim de semana. É partilhada por todas as tabelas de factos, evitando que cada query compute derivações de data em runtime.
+
+dim_category: responde ao o quê ao nível de categoria. Separada de dim_product porque uma categoria descreve dezenas a centenas de produtos — manter os seus atributos (nome em português e em inglês) numa tabela própria evita redundância e facilita atualizações sem reescrever os factos.
+
+dim_product: responde ao o quê ao nível de produto individual. Contém as características físicas (peso, dimensões) e a referência à categoria via chave estrangeira (category_id). É necessária porque o clickstream e as vendas referenciam produtos específicos.
+
+dim_geography: responde ao onde. Converte o código postal em cidade, estado, região e coordenadas geográficas (latitude, longitude). É uma dimensão com duplo papel em fact_sales: representa simultaneamente a localização do cliente (via geo_id da encomenda) e a base de dim_seller (via geo_id do vendedor).
+
+dim_seller: responde ao quem vende. Representa o vendedor com a sua localização geográfica, necessária para análise logística: comparar tempos de entrega entre regiões de origem dos vendedores e regiões de destino dos clientes.
+
+dim_payment: responde ao como se pagou. Cataloga os quatro tipos de pagamento disponíveis (cartão de crédito, boleto bancário, voucher, cartão de débito) com etiquetas legíveis. Separada em dimensão própria porque é uma categoria estável e frequentemente usada como filtro de análise.
+
+Passo 4 — Identificação dos Factos
+
+Os factos são as métricas numéricas armazenadas à granularidade definida, classificadas quanto à sua aditividade.
+
+fact_sales contém métricas aditivas (price, freight_value, total_value, payment_value, payment_installments — podem somar-se por qualquer dimensão), semi-aditivas (days_to_delivery, delivery_delay_days — a média é significativa mas a soma não) e não-aditivas (is_late, booleano usado como predicado de filtragem ou contado para calcular taxa de atraso).
+
+fact_clickstream contém price como facto aditivo (quando o evento é uma compra) e event_type como facto degenerado — não é uma chave para uma dimensão porque os seus valores são poucos e fixos, mas funciona como filtro central para calcular as taxas de conversão do funil.
+
+fact_trends contém search_interest_score (semi-aditivo — a média por semana é útil, a soma não tem interpretação analítica), trend_growth_rate e trend_acceleration (semi-aditivos, indicadores de variação), e is_trending (flag booleana, não-aditiva).
+
+fact_support_emails contém sentiment_score (semi-aditivo — a média é o indicador relevante), word_count (proxy do nível de detalhe e urgência da comunicação), e issue_type e sentiment_label como factos degenerados — categorias textuais com número fixo e reduzido de valores que funcionam como filtros sem necessitarem de dimensão própria.
+
+3.4.2 Implementação Física do Schema
+
+O Data Warehouse é implementado numa instância PostgreSQL 14 dedicada, na base de dados data_warehouse, separada da base de dados operacional olist_db. Esta separação garante que as queries analíticas pesadas sobre as tabelas de factos não competem com a carga de trabalho de ingestão da pipeline, e que o schema do DW pode evoluir independentemente do schema operacional.
+
+O schema é criado pelo script create_datawarehouse.py, que executa o DDL em transação única criando primeiro as dimensões e depois as tabelas de factos com constraints de integridade referencial completas. A utilização de CREATE TABLE IF NOT EXISTS em todas as instruções torna o script idempotente — pode ser re-executado em qualquer estado da base de dados sem erro.
+
+Nas tabelas de factos, date_id é declarado NOT NULL enquanto as restantes chaves estrangeiras são anuláveis. Esta assimetria é deliberada: cada facto tem obrigatoriamente uma data (não existe análise temporal sem âncora temporal), mas pode existir sem produto (eventos de clickstream como search e bounce não estão associados a um produto específico), sem vendedor ou sem localização. Esta distinção evita a perda de factos analiticamente válidos por ausência de dados contextuais secundários.
+
+A tabela fact_trends utiliza uma chave surrogate trend_id SERIAL PRIMARY KEY em conjunto com uma unique constraint composta UNIQUE(date_id, category_id, geo_region). Esta separação entre a PK física e o identificador de negócio é necessária para suportar a semântica ON CONFLICT DO UPDATE com referência ao EXCLUDED no psycopg2, mantendo a unicidade ao nível da combinação semana/categoria/região.
+
+São criados 18 índices secundários distribuídos pelas quatro tabelas de factos e pela dimensão de datas, seguindo a filosofia de indexação orientada ao padrão analítico: um índice na FK de data para cada tabela de factos (presente em praticamente todos os filtros temporais), e índices nas colunas mais usadas como predicados de filtragem — event_type e session_id no clickstream, is_trending nos trends, issue_type e sentiment_label nos emails, e o índice composto (year, month) em dim_date que cobre 90% dos filtros temporais em range.
+
+3.4.3 Camada Analítica: Vistas SQL
+
+Sobre o schema físico do Data Warehouse são criadas seis vistas SQL pelo script create_views.py, que materializam os joins mais frequentes entre factos e dimensões e expõem os dados num formato diretamente consumível pelo Power BI sem necessidade de construir joins no cliente.
+
+vw_tendencias correlaciona os scores do Google Trends com as vendas da mesma semana e categoria, através de um LEFT JOIN entre fact_trends e uma sub-query que agrega fact_sales por (year, week, category_id). O COALESCE(sv.total_orders, 0) garante que semanas com dados de trends mas sem vendas aparecem com valor zero em vez de NULL, evitando distorções em gráficos de linha.
+
+vw_funil_conversao implementa o cálculo do funil de conversão diretamente em SQL, com três taxas calculadas via COUNT(CASE WHEN event_type = '...' THEN 1 END) e NULLIF no denominador para evitar divisão por zero quando não existem visualizações para uma determinada combinação de dimensões.
+
+vw_performance_vendas agrega as métricas financeiras de fact_sales por data, categoria e método de pagamento, incluindo a taxa de frete gratuito por categoria e a flag is_weekend da dimensão de datas para análise do comportamento de compra em dias úteis versus fins de semana.
+
+vw_geografica associa cada venda à localização do cliente, expondo coordenadas lat/lng para visualizações geoespaciais em Power BI Maps, e calcula a taxa de entregas em atraso por estado e região como ROUND(COUNT(CASE WHEN is_late THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2).
+
+vw_logistica faz duplo join a dim_geography na mesma query — um para a região de origem do vendedor e outro para a região de destino do cliente — permitindo identificar pares origem-destino com maiores tempos de entrega e taxas de atraso, uma análise impossível sem a normalização geográfica em dimensão própria.
+
+vw_suporte_emails agrega os emails de suporte por data, tipo de incidente e sentimento, produzindo o AVG(sentiment_score) por semana e tipo de incidente para detecção de degradação no sentimento dos clientes ao longo do tempo.
+
+
+3.5 O Processo de Integração de Dados
+
+3.5.1 Método e Ferramentas
+
+O processo de integração de dados do TrendMart 2026 segue o paradigma ELT (Extract, Load, Transform) nas fontes semi-estruturadas e não estruturadas, e o paradigma ETL (Extract, Transform, Load) na fonte relacional. Esta distinção não é meramente terminológica: reflete uma diferença arquitetural real no tratamento de cada tipo de dado.
+
+Para as fontes de clickstream, emails e tendências, os dados são primeiro extraídos e carregados no Data Lake (camada Bronze) no seu formato original — sem qualquer transformação — e só depois transformados na camada Silver antes de serem promovidos para o Data Warehouse. Esta abordagem ELT preserva os dados originais indefinidamente, desacopla o ritmo de ingestão do ritmo de transformação e permite reprocessar a camada Silver quantas vezes for necessário sem re-ingestão da fonte. O carregamento para o DW ocorre em seguida: o ETL lê os ficheiros Parquet da camada Silver, resolve as chaves estrangeiras em memória através de lookups carregados a partir das tabelas de dimensão, e insere diretamente nas tabelas de factos de produção com semântica ON CONFLICT.
+
+Para a fonte relacional Olist, os dados são extraídos do olist_db, transformados em memória com Pandas — incluindo resolução de FKs, cálculo de métricas derivadas e conversão de tipos — e carregados diretamente no Data Warehouse sem passagem pelo Data Lake. Esta abordagem ETL clássica é justificada pelo facto de o olist_db ser já uma fonte estruturada e limpa com integridade referencial garantida pelo motor relacional. A passagem pelos buckets Bronze e Silver não acrescentaria valor mas introduziria latência e redundância desnecessárias.
+
+A orquestração do processo completo é implementada no Apache Airflow, com um DAG principal (pipeline_olist) que executa em modo backfill desde 2016-09-04, processando um dia simulado de cada vez. A idempotência é garantida a todos os níveis: nos geradores (verificação HEAD no MinIO), na camada Silver (verificação HEAD antes de processar cada partição) e no DW (ON CONFLICT DO NOTHING ou DO UPDATE SET consoante a entidade).
+
+3.5.2 Mapeamento de Dados Source-to-Target
+
+O mapeamento source-to-target descreve as correspondências entre os campos das fontes de dados e as colunas do Data Warehouse, bem como todas as transformações aplicadas durante o processo de integração.
+
+Mapeamento Olist → fact_sales
+
+Campo Fonte (olist_db)
+Transformação
+Campo Destino (fact_sales)
+orders.order_id || '-' || items.order_item_id
+Concatenação de strings
+sale_id (PK)
+orders.order_purchase_timestamp::date
+Lookup em dim_date por full_date
+date_id (FK NOT NULL)
+products.product_category_name
+Lookup em dim_category por category_name
+category_id (FK, nullable)
+customers.customer_zip_code_prefix
+Lookup em dim_geography por zip_code_prefix
+geo_id (FK, nullable)
+orders.order_id
+Cópia direta
+order_id
+customers.customer_unique_id
+Cópia direta
+customer_unique_id
+order_items.product_id
+Cópia direta
+product_id
+order_items.price
+Cópia direta
+price
+order_items.freight_value
+Cópia direta
+freight_value
+order_items.price + order_items.freight_value
+Soma aritmética
+total_value
+sellers.seller_state
+Cópia direta
+seller_state
+sellers.seller_state
+Mapeamento via _REGION_MAP (estado → macrorregião brasileira)
+seller_region
+(order_delivered_customer_date - order_purchase_timestamp).dt.days
+Diferença de timestamps em dias
+days_to_delivery
+(order_delivered_customer_date - order_estimated_delivery_date).dt.days
+Diferença de timestamps em dias
+delivery_delay_days
+reviews.review_score
+Cópia direta (LEFT JOIN; nullable)
+review_score
+
+
+
+A carga é feita com ON CONFLICT (sale_id) DO UPDATE SET para todos os campos não-chave, permitindo que uma re-execução actualize registos já existentes com dados entretanto corrigidos na fonte.
+
+Mapeamento Clickstream (Silver Parquet) → fact_clickstream
+
+Campo Fonte (Silver Parquet)
+Transformação
+Campo Destino (fact_clickstream)
+event_id
+Cópia direta; linha descartada se NULL
+event_id (PK natural)
+timestamp
+Conversão para data string; lookup em dim_date
+date_id (FK NOT NULL)
+category
+Lookup em dim_category por category_name
+category_id (FK, nullable)
+session_id
+Cópia direta
+session_id
+user_id
+Cópia direta
+user_id
+event_type
+Cópia direta (já filtrado em Silver para tipos válidos)
+event_type
+device
+Cópia direta
+device
+
+
+
+A carga usa ON CONFLICT (event_id) DO NOTHING — eventos de clickstream são imutáveis após inserção. Linhas sem date_id resolvido são descartadas antes da inserção.
+
+Mapeamento Google Trends (Silver Parquet) → fact_trends
+
+Campo Fonte (Silver Parquet)
+Transformação
+Campo Destino (fact_trends)
+date (YYYY-MM-DD)
+Lookup em dim_date por full_date
+date_id (FK NOT NULL)
+category_name
+Lookup em dim_category por category_name
+category_id (FK NOT NULL)
+search_interest_score
+Conversão para int; NaN → 0
+search_interest_score
+trend_growth_rate
+NaN/Inf → NULL (_safe_float)
+trend_growth_rate
+trend_acceleration
+NaN/Inf → NULL (_safe_float)
+trend_acceleration
+is_trending
+Conversão para bool
+is_trending
+
+
+
+Linhas sem date_id ou category_id resolvido são descartadas. A carga usa ON CONFLICT (date_id, category_id) DO NOTHING.
+
+Mapeamento Emails (Silver Parquet) → fact_support_emails
+
+Campo Fonte (Silver Parquet)
+Transformação
+Campo Destino (fact_support_emails)
+email_id
+Cópia direta
+email_id (PK natural)
+sent_date (YYYY-MM-DD)
+Lookup em dim_date por full_date
+date_id (FK NOT NULL)
+customer_zip
+Lookup em dim_geography por zip_code_prefix; NULL se coluna ausente
+geo_id (FK, nullable)
+issue_type
+Cópia direta (já classificado em Silver)
+issue_type
+sentiment_score
+Cópia direta como float; NULL se não calculado
+sentiment_score
+sentiment_label
+Cópia direta (já calculado em Silver)
+sentiment_label
+
+
+
+A carga usa ON CONFLICT (email_id) DO NOTHING. Os campos calculados em Silver mas não carregados no DW (subject, word_count, order_id, minio_key) ficam disponíveis no Silver Parquet para consulta directa, não sendo necessários nas agregações analíticas do DW.
+
+
+
+3.5.3 Fluxo do Processo de Integração (BPMN)
+
+O processo de integração de dados é modelado segundo a notação BPMN 2.0, com três pools sequenciais: o Pool Bronze, responsável pela geração local de dados sintéticos e pelo seu carregamento no MinIO Bronze; o Pool Silver, responsável pelo processamento e qualidade dos dados Bronze → Silver; e o Pool DW, responsável pelo carregamento Silver → Data Warehouse. A orquestração entre pools é da responsabilidade do Apache Airflow, através de três DAGs independentes executados em sequência. O diagrama BPMN completo encontra-se no Anexo A deste relatório.
+
+Pool Bronze — DAG 1 (dag_bronze.py)
+
+O DAG Bronze combina geração e ingestão numa única execução, não existindo uma fase de setup separada. Para cada run do Airflow, e para cada uma das três fontes, o DAG executa primeiro a geração dos dados em falta no armazenamento local (data/temp/) e de seguida a ingestão dos ficheiros gerados para o MinIO Bronze.
+Para o clickstream, a geração é incremental por dia: para cada dia da janela [since, until), o DAG verifica se o ficheiro local já existe e, caso contrário, gera os eventos e escreve o NDJSON localmente. Para os emails, a geração é global por email_id — todos os emails derivados de entregas tardias, cancelamentos e reclamações da base Olist são verificados individualmente. Para as tendências de pesquisa, a geração é por categoria — cada categoria é processada uma única vez. Em todos os casos, a idempotência é garantida antes de qualquer escrita. Após a geração, os três módulos de ingestão (bronze_clickstream.py, bronze_emails.py, bronze_trends.py) carregam os ficheiros locais para o MinIO Bronze via API S3-compatível, saltando os objectos já existentes.
+
+Pool Silver — DAG 2 (dag_silver.py)
+
+O DAG Silver chama sequencialmente silver_clickstream.run(), silver_emails.run() e silver_trends.run() para a janela especificada. Cada módulo verifica a existência do ficheiro Silver antes de processar: se o Parquet Silver da partição já existir, o dia ou categoria é saltado sem leitura do Bronze. Caso contrário, o módulo lê o Bronze, aplica as transformações de qualidade (parsing, validação de tipos, filtragem de valores inválidos, desduplicação) e escreve o Parquet no bucket Silver. Para o clickstream e emails a granularidade é diária; para as tendências é por categoria (um ficheiro Parquet por categoria contendo toda a série temporal).
+
+Pool DW — DAG 3 (dag_dw.py)
+
+O DAG DW executa sempre etl_rdb em primeiro lugar, antes de qualquer ETL Silver → DW. Esta ordem é obrigatória: o etl_rdb é responsável por popular as dimensões partilhadas (dim_date, dim_category, dim_geography) sem as quais os módulos seguintes não conseguem resolver chaves estrangeiras. A carga de dimensões usa ON CONFLICT DO UPDATE SET e é saltada se as dimensões já estiverem populadas. Após a carga dimensional, o etl_rdb executa a carga incremental de fact_sales com watermark baseado na data máxima já carregada.
+Após o etl_rdb completar, os três módulos Silver → DW correm para a mesma janela: gold_clickstream.run(), gold_emails.run() e gold_trends.run(). Cada módulo carrega os lookups das dimensões em memória, resolve as chaves estrangeiras por mapeamento vectorizado e insere nas tabelas de factos com semântica ON CONFLICT DO NOTHING — os eventos de clickstream, emails e trends são tratados como imutáveis após inserção. Para os trends, o DAG mantém um acumulador de processed_trend_cats entre execuções, evitando reprocessar categorias já carregadas em runs anteriores. Linhas sem date_id resolvido são descartadas antes da inserção em qualquer das tabelas de factos.
+
+
+3.5.4 Orquestração com Apache Airflow
+
+A orquestração do processo completo é implementada com dois mecanismos complementares: um DAG Airflow (pipeline_dag.py) para execução em modo backfill gerido pelo scheduler, e um orquestrador standalone (pipeline.py) para execução local com relógio simulado.
+
+DAG Airflow — pipeline_olist
+
+O DAG pipeline_olist é definido com schedule_interval='@daily', start_date=datetime(2016, 9, 4) e catchup=True, cobrindo o período de simulação completo de 2016-09-04 a 2018-10-17 (aproximadamente 780 runs diários). O parâmetro max_active_runs=1 garante que os dias são sempre processados em série — nunca dois runs em paralelo — o que é necessário porque a geração de dados e os ETLs partilham estado nos buckets MinIO e na base de dados.
+
+Cada run diário contém três tarefas com dependências explícitas em cadeia:
+dag_bronze >> dag_silver >> dag_dw
+
+A tarefa dag_bronze invoca dag_bronze.run(since, until), que executa a geração de dados locais e a ingestão para o MinIO Bronze. A tarefa dag_silver invoca dag_silver.run(since, until), que processa Bronze → Silver para a janela do run. A tarefa dag_dw invoca dag_dw.run(since, until), que executa primeiro o etl_rdb (populando dimensões e fact_sales) e de seguida os três módulos Silver → DW.
+O único estado inter-run persistido em Airflow Variable (pipeline_processed_trend_cats) é a lista de categorias de trends já carregadas no DW, necessária para que o gold_trends não reprocesse categorias numa re-execução. O progresso temporal é gerido pelo próprio mecanismo de catchup do Airflow — a execution_date de cada run é a data simulada. Em caso de falha, o Airflow tenta novamente com retries=1 e retry_delay=2 min antes de marcar o run como falhado.
+
+Orquestrador Standalone — pipeline.py
+
+Para execução local sem Airflow, o pipeline.py implementa um PipelineOrchestrator com um relógio simulado (SimClock) que avança o tempo simulado a velocidade configurável. O preset por omissão é sim (1440×), equivalente a comprimir um dia simulado em 1 minuto real. Estão disponíveis outros presets: slow (60×), fast (7200×) e turbo (43200×).
+O estado é persistido a cada 15 segundos em pipeline_state.json, com os campos last_pipeline_day e processed_trend_cats, permitindo retomar exactamente no ponto de interrupção após uma paragem. Quando o relógio simulado cruza um novo 00:00:00, o orquestrador dispara a mesma sequência DAG Bronze → DAG Silver → DAG DW para a janela [last_pipeline_day, last_pipeline_day + 1 dia), e repõe o timer real após cada ETL para que o tempo de processamento não seja contado como tempo simulado.
+
+
+3.5.5 Validação e Testes
+
+A validação do processo de integração opera em duas dimensões complementares: validação inline durante o processamento Silver e validação funcional sobre o Data Warehouse após a carga.
+
+Validação Inline na Camada Silver
+
+A principal barreira de qualidade de dados do sistema encontra-se na camada Silver. Cada módulo de processamento aplica regras de validação explícitas durante a transformação, antes de qualquer dado chegar ao DW. Esta abordagem — validar na transformação em vez de numa camada de staging separada — simplifica a arquitetura e garante que o dado que chega ao DW já cumpre todos os invariantes de qualidade.
+
+As regras de validação cobrem quatro categorias de anomalias. Integridade de identidade: descarte de registos sem event_id, email_id ou timestamp — identificadores sem os quais o registo é irrecuperável. Conformidade com vocabulários controlados: filtragem de event_type para os 6 valores válidos no clickstream, e verificação de issue_type (3 valores) e sentiment_label (3 valores) nos emails. Invariantes de negócio: clip de price para valores não-negativos, limitação de search_interest_score ao intervalo [0, 100], e sanitização de NaN e Inf em campos numéricos derivados. Coerência temporal: descarte de registos com timestamps não parseáveis ou datas inválidas.
+
+A resolução de chaves estrangeiras no momento do carregamento para o DW funciona como uma segunda barreira: registos cujo date_id não possa ser resolvido (porque a data não existe em dim_date) são descartados antes da inserção, garantindo que nenhum facto chega ao DW com a FK obrigatória a NULL. As restrições de integridade referencial declaradas no schema PostgreSQL funcionam como última linha de defesa, rejeitando ao nível do motor qualquer inserção que viole uma FK.
+
+Validação Funcional — Testes de Consistência
+
+Após a carga completa do histórico, foi realizado um conjunto de verificações de consistência sobre o Data Warehouse:
+
+— Verificação de completude temporal: contagem do número de dias distintos com dados em fact_sales, fact_clickstream e fact_support_emails face ao número de dias esperados no período 2016-09-04 a 2018-10-17, confirmando a ausência de lacunas no processamento e a correspondência com o número de partições Silver.
+— Verificação de integridade referencial: queries de left join entre cada tabela de factos e as suas dimensões para confirmar que nenhuma FK aponta para um registo inexistente — o resultado esperado é zero orphaned records.
+— Verificação de invariantes de negócio: queries de contagem de linhas com price < 0, total_value < price, sentiment_score fora de [-1, 1] e search_interest_score fora de [0, 100] sobre as tabelas de produção — o resultado esperado é zero violações.
+— Verificação de correcção das métricas derivadas: para uma amostra de 100 encomendas selecionadas aleatoriamente, comparação entre os valores de days_to_delivery e delivery_delay_days calculados pelo ETL e os valores calculados manualmente a partir dos timestamps do olist_db, confirmando a correcção aritmética do cálculo.
+— Validação cruzada de volumes: comparação entre o número de transações na tabela orders do olist_db e o número de sale_id distintos em fact_sales, com documentação e justificação das diferenças esperadas (ordens sem items associados, pagamentos com payment_sequential != 1).
+
+Estes testes, executados como queries SQL após a conclusão do backfill, fornecem confiança na correcção do processo de integração. Num ambiente de produção, estes checks seriam automatizados como tarefas de validação no próprio DAG do Airflow, executadas após cada batch diário e com alertas em caso de desvio face aos limiares esperados.
+
+
+
+
+
+4. Exploração e Análise de Dados
+
+4.1 Organização Geral do Sistema de Dashboarding
+
+A camada de visualização do TrendMart 2026 é implementada em Microsoft Power BI Desktop e organiza-se em cinco dashboards temáticos, cada um concebido para um perfil de utilizador específico identificado no capítulo 2. Esta segmentação temática reflete uma decisão de design deliberada: em vez de um dashboard universal com centenas de métricas, o sistema disponibiliza cinco painéis focados que respondem diretamente às perguntas de negócio de cada perfil, sem sobrecarregar o utilizador com informação irrelevante para o seu contexto.
+
+Cada dashboard consome diretamente uma vista SQL analítica pré-computada no Data Warehouse PostgreSQL, com as junções, agregações e métricas derivadas já resolvidas na camada de dados. Esta arquitectura de vistas-como-interface tem três vantagens práticas. Primeiro, o Power BI recebe dados já prontos — sem necessidade de transformações no Power Query —, o que simplifica o modelo de dados e reduz a latência de carregamento. Segundo, qualquer alteração ao modelo dimensional subjacente (nova coluna numa tabela de factos, nova dimensão) é absorvida na vista sem necessidade de alterar o dashboard. Terceiro, as mesmas vistas podem ser consumidas por outras ferramentas de BI (Tableau, Metabase, Grafana) sem alteração da camada de dados.
+
+A Tabela 4.1 apresenta a correspondência entre dashboards, vistas SQL e perfis de utilizador servidos.
+
+Dashboard                      | Vista SQL                  | Perfil Principal              | Fontes de Dados Subjacentes
+-------------------------------|----------------------------|-------------------------------|-----------------------------------------
+Tendências e Procura           | vw_tendencias              | Analista de Marketing         | fact_trends + fact_sales + dim_date + dim_category
+Performance de Vendas          | vw_performance_vendas      | Analista de Negócio           | fact_sales + dim_date + dim_category + dim_geography
+Comportamentos de Navegação    | vw_comportamentos          | Analista de Marketing         | fact_clickstream + fact_sales + dim_date + dim_category
+Sentimentos e Suporte          | vw_sentimentos             | Gestor de Operações           | fact_support_emails + dim_date + dim_geography
+Previsões ML                   | vw_forecasts               | Data Scientist / Negócio      | fact_forecasts + fact_model_metrics + dim_date + dim_category
+
+A organização reflecte a arquitectura de dados subjacente: as dimensões dim_date e dim_category são partilhadas por todos os dashboards, permitindo que o utilizador aplique os mesmos filtros de período temporal e categoria em qualquer painel. As dimensões dim_geography e as tabelas de métricas de ML são específicas aos dashboards que as necessitam.
+
+
+4.2 Dashboards de Exploração e Análise
+
+4.2.1 Dashboard de Tendências e Procura
+
+Objetivo e Contexto
+
+O Dashboard de Tendências e Procura é concebido para o Analista de Marketing e responde à pergunta central do projeto TrendMart: os padrões de pesquisa online antecipam as vendas? O dashboard operacionaliza a hipótese de desfasamento temporal entre interesse de pesquisa e conversão em transação, que constitui a motivação académica fundamental do sistema.
+
+Vista Subjacente
+
+A vista vw_tendencias é calculada sobre fact_trends e fact_sales com granularidade semanal por categoria. A sua principal contribuição técnica são as colunas derivadas por window functions: LAG(search_interest_score, 1) retorna o índice de pesquisa da semana anterior para a mesma categoria, permitindo comparar o score atual com o passado; LEAD(total_orders, 1) e LEAD(total_orders, 2) retornam o volume de encomendas das semanas seguintes, que no contexto de um dashboard Power BI permitem ao analista observar, para qualquer semana histórica, qual foi o volume de vendas nas semanas subsequentes — materializando visualmente a hipótese de desfasamento.
+
+Métricas e Visualizações
+
+O dashboard expõe seis categorias de métricas principais:
+
+Cartões de Síntese: apresentam o número de categorias sinalizadas como trending na semana selecionada, o score médio de interesse de pesquisa e a taxa de crescimento média de pesquisa no período.
+
+Gráfico de Linha Temporal Duplo: eixo primário com search_interest_score (escala 0-100) e eixo secundário com total_orders para uma categoria selecionada, com granularidade semanal. Permite observar visualmente o desfasamento entre pico de pesquisa e pico de vendas — tipicamente de uma a duas semanas. A coluna search_score_prev_week permite adicionar uma segunda série de pesquisa deslocada temporalmente para visualizar a autocorrelação.
+
+Tabela de Categorias Trending: lista as categorias com is_trending = TRUE na semana selecionada, ordenadas por trend_growth_rate decrescente. Inclui search_interest_score, trend_growth_rate, trend_acceleration, total_orders e total_revenue para contextualização imediata.
+
+Gráfico de Dispersão Pesquisa vs. Vendas: cada ponto representa uma categoria numa semana, com search_interest_score no eixo X e total_orders no eixo Y. Permite identificar categorias com alta pesquisa mas baixas vendas (oportunidades de conversão) e categorias com alta venda mas pesquisa declinante (risco de saturação).
+
+Análise de Aceleração: gráfico de barras com trend_acceleration por categoria, que distingue categorias em fase de emergência rápida (aceleração positiva e crescente) de categorias em maturação (crescimento positivo mas aceleração nula ou negativa).
+
+Mapa de Calor Temporal: matriz semanal × categoria com intensidade codificada por search_interest_score, permitindo identificar padrões de sazonalidade por categoria (ex.: picos de electrónica em novembro, picos de moda em março).
+
+Valor Analítico
+
+Este dashboard é o único do sistema que explora explicitamente a causalidade temporal entre fontes — o desfasamento entre pesquisa e vendas. O valor para o negócio é concreto: permite ao analista de marketing antecipar com uma a duas semanas de antecedência quais as categorias com procura crescente, informando decisões de stock, promoção e alocação de orçamento publicitário antes que o sinal de vendas seja visível.
+
+4.2.2 Dashboard de Performance de Vendas
+
+Objetivo e Contexto
+
+O Dashboard de Performance de Vendas é o dashboard principal do Analista de Negócio e fornece uma visão completa e interativa do desempenho comercial da plataforma TrendMart no período coberto pelo dataset Olist (setembro 2016 – outubro 2018). É o dashboard com maior abrangência de métricas e o de maior utilidade para a gestão executiva.
+
+Vista Subjacente
+
+A vista vw_performance_vendas é construída ao nível do item de encomenda — a granularidade mais fina disponível no dataset. Esta opção de granularidade permite que o Power BI agregue os dados em qualquer nível superior (encomenda, categoria, mês, região) sem perda de informação, ao contrário de uma vista pré-agregada que limitaria as opções de análise. A vista inclui todas as dimensões geográficas do cliente (estado, região, cidade, latitude, longitude), todas as dimensões temporais (data, ano, trimestre, mês, semana), identificadores de negócio (order_id, customer_unique_id, product_id) e métricas operacionais (price, freight_value, total_value, days_to_delivery, delivery_delay_days, review_score).
+
+Métricas e Visualizações
+
+Cartões KPI de Topo: três métricas de síntese — Receita Total (SUM(total_value)), Total de Encomendas (COUNT DISTINCT order_id)) e Total de Clientes (COUNT DISTINCT customer_unique_id)) — com variação percentual face ao período anterior configurável.
+
+Treemap Categoria → Produto: visualização hierárquica com o primeiro nível a representar categorias (dimensionadas pela receita total) e o segundo nível a mostrar os produtos individuais de cada categoria. Permite identificar, numa única visualização, tanto as categorias dominantes como os produtos mais relevantes dentro de cada categoria.
+
+Mapa de Calor Geográfico: mapa do Brasil com pontos posicionados por (customer_lat, customer_lng) e intensidade de cor codificada por receita total. Permite identificar a concentração geográfica dos clientes e regiões com potencial de crescimento subexplorado. A granularidade pode ser ajustada entre cidade, estado e região através de filtros de slicer.
+
+Gráfico de Área Temporal: série temporal de receita e volume de encomendas por semana, mês ou trimestre, com possibilidade de comparação entre categorias em série. Permite identificar sazonalidade, tendências de crescimento de longo prazo e quebras estruturais no período de análise.
+
+Análise Logística e de Qualidade: esta secção, embora partilhada com o perfil do Gestor de Operações, está integrada no mesmo dashboard por partilhar a mesma vista de dados. Inclui:
+— Percentagem de encomendas com atraso (COUNTIF(is_late_delivery = 1) / COUNT(order_id));
+— Média de dias de atraso (AVG(delay_days_when_late) WHERE delay_days_when_late IS NOT NULL);
+— Score médio de avaliação (AVG(review_score));
+— Scatter plot de atraso de entrega vs. score de avaliação ao nível da encomenda, que permite visualizar a correlação negativa esperada entre atraso e satisfação;
+— Treemap de categorias por score de avaliação médio, identificando categorias com maior insatisfação do cliente;
+— Mapa geográfico com score de avaliação médio por região, revelando padrões logísticos regionais.
+
+Valor Analítico
+
+Este dashboard tem o maior número de utilizadores potenciais do sistema — qualquer decisor de negócio que precise de entender o desempenho comercial da plataforma. A profundidade de análise possível — do nível de produto individual ao nível regional agregado, com correlação entre métricas logísticas e de satisfação — torna-o um instrumento de diagnóstico completo que substitui múltiplos relatórios estáticos por uma única superfície interativa.
+
+4.2.3 Dashboard de Comportamentos de Navegação
+
+Objetivo e Contexto
+
+O Dashboard de Comportamentos de Navegação é concebido para o Analista de Marketing e responde a questões sobre a qualidade do funil de conversão da plataforma — da pesquisa inicial à compra concluída. Enquanto o Dashboard de Tendências olha para sinais externos (Google Trends), este dashboard olha para sinais internos capturados pelo sistema de clickstream, que registam o comportamento real dos utilizadores na plataforma.
+
+Vista Subjacente
+
+A vista vw_comportamentos agrega os eventos de clickstream a quatro dimensões: data, categoria, dispositivo, e métricas globais pré-calculadas. A sua construção é tecnicamente a mais complexa das cinco vistas: combina um CTE de preços médios por categoria (proveniente de fact_sales), um CTE de totais por categoria para o cálculo de taxas ao nível de categoria, e um CTE de totais globais para as métricas de cartão — tudo num único SELECT com CROSS JOIN para as métricas globais. Esta abordagem garante que as taxas pré-calculadas (cat_abandon_rate, cat_purchase_rate, global_conversion_rate, global_abandon_rate) estejam disponíveis como colunas em todas as linhas da vista, sem necessidade de múltiplas queries no Power BI.
+
+Métricas e Visualizações
+
+Cartões de Síntese Global: três métricas fixas calculadas sobre todo o período — Taxa de Conversão Global (compras / visualizações, em percentagem), Taxa de Abandono de Carrinho Global (abandonos / adições ao carrinho, em percentagem) e Total de Sessões Únicas.
+
+Funil de Conversão: gráfico de funil com cinco etapas — Pesquisas → Visualizações → Adições ao Carrinho → Compras → Abandonos de Carrinho — com os totais SUM(total_searches), SUM(total_views), SUM(total_add_to_cart), SUM(total_purchases) e SUM(total_cart_abandons). Permite quantificar as perdas em cada transição do funil e identificar a etapa com maior atrito.
+
+Análise por Dispositivo: gráfico de barras empilhadas com distribuição de eventos por tipo e por dispositivo (mobile, desktop, tablet). Permite identificar se a taxa de conversão difere significativamente por canal de acesso — um padrão comum em e-commerce onde o mobile tem maior volume de browsing mas menor taxa de compra.
+
+Scatter Plot de Categorias — Preço vs. Abandono: cada ponto representa uma categoria, com avg_price_category no eixo X e cat_abandon_rate no eixo Y. Permite testar a hipótese de que categorias com preço médio mais elevado têm maior taxa de abandono de carrinho, o que teria implicações para a estratégia de pricing e promoção.
+
+Análise Temporal de Taxas: gráfico de linha com granularidade semanal ou mensal, calculando a taxa de conversão e taxa de abandono ao longo do tempo a partir das contagens de eventos SUM(total_add_to_cart) / SUM(total_views). Permite identificar períodos com degradação da experiência de utilizador ou picos de interesse não convertido.
+
+Taxa de Abandono por Categoria: gráfico de barras horizontais com cat_abandon_rate por category_name, ordenadas de forma decrescente. Identifica as categorias com maior fricção no processo de compra, que são candidatas prioritárias a ações de marketing de recuperação de carrinho.
+
+Valor Analítico
+
+Este dashboard opera sobre dados sintéticos gerados com probabilidades fixas, o que implica que as taxas de conversão e abandono são relativamente uniformes entre categorias. Em ambiente de produção real, com dados de clickstream genuínos, este dashboard seria o mais rico em insights operacionais do sistema — a heterogeneidade real das taxas de conversão entre categorias e dispositivos é tipicamente o principal driver de otimização de receita em plataformas de e-commerce.
+
+4.2.4 Dashboard de Sentimentos e Suporte ao Cliente
+
+Objetivo e Contexto
+
+O Dashboard de Sentimentos e Suporte ao Cliente é concebido para o Gestor de Operações e fornece uma análise da experiência subjetiva do cliente, derivada dos emails de suporte ao cliente processados pelo sistema NLP léxico. É o único dashboard do sistema que processa dados não estruturados — os emails EML parseados na camada Silver — e que explora a dimensão qualitativa da relação cliente-plataforma.
+
+Vista Subjacente
+
+A vista vw_sentimentos é construída ao nível do email individual — a granularidade mais fina disponível nesta fonte — com junção à localização geográfica do cliente quando disponível. Esta granularidade permite ao Power BI agregar em qualquer dimensão (por período, por tipo de incidente, por região) mantendo a flexibilidade de análise. A vista inclui o sentiment_score contínuo (em [-1, 1]) e o sentiment_label categórico (positive, neutral, negative), permitindo tanto análises de distribuição discreta como análises de tendência contínua.
+
+Métricas e Visualizações
+
+Cartões de Síntese: cinco métricas de síntese — Total de Emails processados, número de emails Negativos, Neutros e Positivos (COUNT com filtro em sentiment_label), e Score Médio de Sentimento (AVG(sentiment_score)).
+
+Evolução Temporal do Sentimento: gráfico de linha com granularidade semanal ou mensal, mostrando a evolução do sentiment_score médio ao longo do tempo. Permite identificar deteriorações de sentimento que precedem quedas de vendas — o sinal leading descrito na secção 3.2.4.
+
+Distribuição por Tipo de Incidente: gráfico de barras horizontais com o score médio de sentimento por issue_type (late_delivery, cancellation, complaint). Permite comparar se reclamações de atraso têm sentimento mais negativo do que cancelamentos — o que tem implicações sobre qual o tipo de incidente que mais deteriora a perceção do cliente.
+
+Análise Geográfica de Reclamações: mapa do Brasil com densidade de emails por estado ou região, filtrado por tipo de incidente. Permite identificar concentrações geográficas de problemas operacionais — por exemplo, uma região com volume anormalmente alto de late_delivery emails pode indicar problemas logísticos localizados antes que o impacto nas avaliações públicas se materialize.
+
+Barras de Incidente por Região: gráfico de barras agrupadas com o volume de emails por tipo de incidente (complaint, late_delivery, cancellation) para cada estado ou região, permitindo comparar o perfil de incidentes entre regiões geográficas.
+
+Histograma de Distribuição de Sentimento: distribuição do sentiment_score contínuo em intervalos de 0,1, mostrando a assimetria da distribuição — tipicamente enviesada para valores negativos em emails de suporte, dado que os clientes satisfeitos raramente contactam o serviço de apoio.
+
+Valor Analítico
+
+Este dashboard é o único do sistema que processa dados não estruturados transformados em métricas quantificáveis. O seu valor principal não está nas métricas absolutas — que derivam de dados sintéticos com distribuições conhecidas — mas na demonstração metodológica de como a análise de sentimento de texto pode ser integrada num pipeline analítico completo, desde o email EML original até à visualização em Power BI, passando por processamento NLP léxico, camada Silver, ETL para o DW e vista SQL analítica.
+
+4.2.5 Dashboard de Previsões ML
+
+Objetivo e Contexto
+
+O Dashboard de Previsões ML é o dashboard mais técnico do sistema e serve dois perfis simultaneamente: o Data Scientist, que necessita de comparar o desempenho dos três modelos e auditar as métricas de avaliação, e o Analista de Negócio, que necessita de previsões de procura para as próximas oito semanas para suportar decisões de stock e planeamento. É o único dashboard do sistema que se estende para além do período histórico coberto pelos dados — as previsões futuras (is_future = TRUE) estendem a série temporal para além de outubro de 2018, ou para oito semanas a partir da última data de treino disponível.
+
+Vista Subjacente
+
+A vista vw_forecasts é a mais simples das cinco em termos de SQL — é um flat join entre fact_forecasts, dim_date e dim_category, sem agregações ou window functions —, mas a mais rica em termos de dados de negócio, pois agrega os resultados de três modelos distintos, dois targets (total_orders, total_revenue) e múltiplas categorias com horizon de oito semanas futuras. A granularidade ao nível da previsão individual — uma linha por (data, categoria, modelo, target) — permite ao Power BI filtrar e comparar modelos com total flexibilidade.
+
+A tabela fact_model_metrics é consumida separadamente (sem vista intermédia, por directa importação no Power BI) para a secção de métricas de desempenho — uma tabela com uma linha por (categoria, modelo, target) contendo MAE, RMSE, MAPE e datas de treino/teste.
+
+Métricas e Visualizações
+
+Secção de Previsões (consumo de vw_forecasts):
+
+Gráfico de Linha Temporal com Previsões: série temporal completa com dados históricos e previsões futuras para uma combinação (categoria, modelo, target) selecionada. As previsões históricas (is_future = FALSE) permitem avaliar visualmente a qualidade do ajuste do modelo ao período de treino. As previsões futuras (is_future = TRUE) estendem a linha para além do período histórico, com bandas de confiança (lower_bound, upper_bound) para Prophet e ARIMA. Para XGBoost, apenas a linha central é disponibilizada (lower_bound e upper_bound são NULL).
+
+Comparação de Modelos na Mesma Categoria: gráfico de linha com três séries sobrepostas — Prophet, ARIMA e XGBoost — para a mesma categoria e target, permitindo comparar visualmente onde os modelos divergem e identificar as semanas de maior desacordo entre previsões.
+
+Tabela de Anomalias: lista de registos com is_anomaly = TRUE filtrados por categoria e período, com a data, modelo, valor previsto e anomalia sinalizada. Permite ao Data Scientist identificar semanas históricas que os modelos classificaram como outliers face à distribuição esperada.
+
+Secção de Métricas de Desempenho (consumo de fact_model_metrics):
+
+Tabela Comparativa de Modelos: tabela com linhas por (model_name, target_metric) e colunas com MAE médio, RMSE médio e MAPE médio agregados sobre todas as categorias, permitindo comparar o desempenho global dos três modelos. Esta é a tabela central de avaliação académica do sistema — um leitor do relatório pode verificar aqui se o XGBoost superou efectivamente o Prophet e o ARIMA, e em que métricas.
+
+Heatmap de MAPE por Categoria e Modelo: matriz com categorias nas linhas, modelos nas colunas, e intensidade de cor codificada por MAPE. Permite identificar categorias onde um modelo específico tem desempenho significativamente superior ou inferior aos restantes — informação relevante para selecionar o modelo de previsão mais adequado para cada categoria.
+
+Gráfico de Barras de MAE por Categoria: barras agrupadas com o MAE dos três modelos para cada categoria, ordenadas por MAE do melhor modelo. Permite identificar as categorias mais difíceis de prever (MAE elevado em todos os modelos) e as mais previsíveis (MAE baixo em todos os modelos).
+
+Datas de Treino e Teste: tabela com train_start, train_end, test_start, test_end e train_weeks por modelo e categoria, que documenta o protocolo de avaliação e permite verificar que todos os modelos foram avaliados no mesmo conjunto de teste.
+
+Valor Analítico
+
+Este dashboard é o artefacto de maior valor académico do sistema, pois materializa a contribuição técnica central do projeto: a construção de um pipeline de machine learning end-to-end que vai desde a feature engineering sobre dados reais até à persistência de previsões e métricas num Data Warehouse e sua consumo em Power BI. O seu valor de negócio está nas previsões futuras — as oito semanas de horizonte de previsão por categoria permitem ao Analista de Negócio antecipar volumes de procura e planear stock e operações com antecedência, transformando o sistema de meramente descritivo em genuinamente preditivo.
+
+A comparação entre os três modelos — um modelo clássico univariado (ARIMA), um modelo de decomposição aditiva (Prophet) e um modelo de gradient boosting com features externas (XGBoost) — demonstra empiricamente o valor incremental das features de clickstream, Google Trends e sentimento que o sistema integra: se o XGBoost apresentar MAPE inferior ao Prophet e ARIMA nas categorias com maior riqueza de dados externos, a hipótese de que as covariáveis externas melhoram a previsão de procura fica validada empiricamente.
+
+
+4.3 Considerações sobre Limitações dos Dashboards
+
+Quatro limitações relevantes merecem nota para contextualização dos resultados visualizados nos dashboards.
+
+Primeira limitação — dados sintéticos para três das quatro fontes: os dados de clickstream e emails são gerados sinteticamente com distribuições probabilísticas fixas, e os dados de Google Trends para categorias sem cobertura SerpAPI são também sintéticos. Isto significa que os padrões visualizados nos Dashboards de Comportamentos e Sentimentos reflectem parcialmente os parâmetros do gerador em vez de padrões de comportamento real. Em particular, a taxa de conversão do clickstream (40% add_to_cart, 45% purchase dentro do cart) é constante por construção, o que explica a uniformidade das métricas de funil entre categorias.
+
+Segunda limitação — cobertura temporal do dataset Olist: o dataset cobre setembro de 2016 a outubro de 2018. Qualquer análise de sazonalidade está limitada a dois ciclos anuais completos, o que pode não ser suficiente para modelos de séries temporais capturarem padrões de sazonalidade de longo prazo com alta confiança.
+
+Terceira limitação — ausência de intervalos de confiança no XGBoost: o modelo XGBoost não produz estimativas probabilísticas nativas, pelo que as previsões futuras deste modelo não incluem bandas de confiança. Este é um trade-off conhecido entre modelos determinísticos (maior precisão pontual potencial) e modelos probabilísticos (quantificação de incerteza). Para uso em produção real, esta limitação poderia ser endereçada com técnicas de conformal prediction ou quantile regression.
+
+Quarta limitação — análise de sentimento léxica: o classificador de sentimento implementado usa um léxico de 37 palavras (26 negativas, 11 positivas), o que é suficiente para demonstração metodológica mas sub-óptimo para texto em português com sarcasmo, negações compostas ou expressões idiomáticas. Em ambiente de produção, seria substituído por um modelo transformer treinado em português (ex.: BERTimbau), com impacto direto na qualidade das métricas do Dashboard de Sentimentos.
+
+
