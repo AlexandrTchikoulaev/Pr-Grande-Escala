@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+.installed.cfg
+lib/
+lib64/
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker (apenas artefactos de runtime)
+*.log
+docker-compose.override.yml
+
+# Airflow (apenas artefactos de runtime)
+airflow.db
+airflow-webserver.pid
+airflow/logs/
+
+# Spark / Hadoop (apenas artefactos de runtime)
+derby.log
+metastore_db/
+spark-warehouse/
+
+# Data files (ignorar globalmente, mas manter em data_sources)
+*.csv
+*.parquet
+*.json
+*.avro
+*.orc
+*.xlsx
+*.xls
+
+# Exceções: dados que alimentam os data sources
+!data_sources/**/*.csv
+!data_sources/**/*.json
+!data_sources/**/*.parquet
+!data_sources/**/*.avro
+!data_sources/**/*.orc
+!data_sources/**/*.xlsx
+!data_sources/**/*.xls
+
+# Credentials / Secrets
+*.env
+.env.*
+secrets/
+credentials/
+*.key
+*.pem
+*.crt
+
+# Word documents (ficheiros de relatório pessoal)
+*.docx
+*.doc
+
+# Temp / backup
+*.bak
+*.tmp
+*.orig
+*_backup*
+*_pre_edit*
+
+# Reports / output gerado
+relatorio_text.txt
+relatorio_vf.txt
+estrutura_relatorio.txt
