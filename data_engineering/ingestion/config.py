@@ -5,7 +5,7 @@ import os
 # ---------------------------------------------------------------------------
 KAFKA_BOOTSTRAP            = os.getenv("KAFKA_BOOTSTRAP",  "localhost:29092")
 CLICKSTREAM_TOPIC          = "clickstream_events"
-CDC_TOPIC                  = "debezium.public.simulated_orders"
+CDC_TOPICS                 = ["debezium.public.orders", "debezium.public.order_items"]
 GROUP_CLICKSTREAM          = "de_clickstream_consumer"
 GROUP_CDC                  = "de_cdc_consumer"
 

@@ -52,24 +52,37 @@ def _train_evaluate(train, test, category_id):
     return model, rmse, mae
 
 
-def _make_future_rows(spark, category_id, category_en):
-    """Gera 7 linhas com features de calendário para datas futuras."""
+def _make_future_rows(spark, category_id, category_en, history: dict):
+    """Gera 7 linhas com features para datas futuras.
+
+    history: {datetime.date -> float} com os últimos ~14 dias de orders_count reais,
+    usado para popular lag_1, lag_7, lag_14 e rolling_7d_mean com valores reais
+    em vez de 0, o que melhora significativamente a qualidade das previsões.
+    """
     today = date.today()
     rows = []
     for i in range(1, FORECAST_DAYS + 1):
         d = today + timedelta(days=i)
+        lag_1  = float(history.get(today + timedelta(days=i - 1),  0) or 0)
+        lag_7  = float(history.get(today + timedelta(days=i - 7),  0) or 0)
+        lag_14 = float(history.get(today + timedelta(days=i - 14), 0) or 0)
+        rolling_vals = [
+            float(history.get(today + timedelta(days=i - j), 0) or 0)
+            for j in range(1, 8)
+        ]
+        rolling_7d_mean = sum(rolling_vals) / 7
         rows.append({
-            "category_id":    category_id,
-            "category_en":    category_en,
-            "forecast_date":  d.isoformat(),
-            "lag_1":          0.0,
-            "lag_7":          0.0,
-            "lag_14":         0.0,
-            "rolling_7d_mean": 0.0,
-            "day_of_week":    d.isoweekday(),
-            "is_weekend":     d.isoweekday() >= 6,
-            "month":          d.month,
-            "quarter":        (d.month - 1) // 3 + 1,
+            "category_id":     category_id,
+            "category_en":     category_en,
+            "forecast_date":   d.isoformat(),
+            "lag_1":           lag_1,
+            "lag_7":           lag_7,
+            "lag_14":          lag_14,
+            "rolling_7d_mean": rolling_7d_mean,
+            "day_of_week":     d.isoweekday(),
+            "is_weekend":      float(d.isoweekday() >= 6),
+            "month":           d.month,
+            "quarter":         (d.month - 1) // 3 + 1,
         })
     return spark.createDataFrame(rows)
 
@@ -120,7 +133,11 @@ def run(spark: SparkSession) -> int:
         global_mae  += mae
         n_cats      += 1
 
-        future_rows = _make_future_rows(spark, cat_id, cat_en)
+        # construir histórico recente para popular os lag features das datas futuras
+        recent = cat_data.orderBy("purchase_date").tail(14)
+        history = {row["purchase_date"]: row["orders_count"] for row in recent}
+
+        future_rows = _make_future_rows(spark, cat_id, cat_en, history)
         assembler   = VectorAssembler(inputCols=FEATURE_COLS, outputCol="features")
         future_feat = assembler.transform(future_rows)
         preds = model.transform(future_feat)

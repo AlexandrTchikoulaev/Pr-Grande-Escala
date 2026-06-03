@@ -2,9 +2,9 @@
 
 ## O que faz esta equipa
 
-A equipa de Analytical Engineering é responsável pela **orquestração completa do pipeline de transformação**: desde Bronze até às vistas SQL no Trino, passando por Silver e Gold.
+A equipa de Analytical Engineering é responsável pelo **código de transformação Gold** e pelas **vistas SQL expostas ao dashboard**. Escreve os jobs Spark que convertem as tabelas Silver em tabelas Gold (modelo dimensional em estrela) e as vistas Trino que materializam os joins mais frequentes.
 
-Tudo corre via **Apache Airflow**, num único DAG horário que sequencia Silver → Gold → Views.
+A equipa não é dona do Airflow nem das DAGs — define o SLA de frequência que precisa (horária) e comunica-o à infrastructure, que implementa e mantém o schedule.
 
 ---
 
@@ -12,8 +12,7 @@ Tudo corre via **Apache Airflow**, num único DAG horário que sequencia Silver 
 
 ```
 analytical_engineering/
-├── pipeline/
-│   └── dag_trendmart.py          # DAG Airflow — orquestra Silver + Gold + Views
+├── pipeline/                     # (pasta vazia — DAG movida para infrastructure/dags/)
 ├── transformations/
 │   ├── config.py                 # Configurações (MinIO, HMS, Trino, sentimentos, REGION_MAP)
 │   ├── spark_session.py          # Factory SparkSession (S3A + Iceberg Gold)
@@ -150,10 +149,13 @@ analytical_engineering/
 
 ---
 
-## DAG Airflow (dag_trendmart.py)
+## DAG Airflow (dag_trendmart.py — pertence à infrastructure)
+
+A DAG `trendmart_gold_pipeline` é propriedade e responsabilidade da equipa infrastructure (`infrastructure/dags/dag_trendmart.py`). A analytical_engineering definiu o requisito de frequência horária; a infrastructure implementou-o com `schedule_interval="0 * * * *"`.
 
 **DAG ID:** `trendmart_gold_pipeline`
-**Schedule:** `0 * * * *` (início de cada hora)
+**Schedule:** `0 * * * *` (início de cada hora — schedule imposto pela analytical_engineering)
+**Owner:** `infrastructure`
 **Catchup:** False (não recupera horas em falta)
 **Max active runs:** 1 (sem overlap)
 **Retries:** 1 tentativa, delay de 5 minutos

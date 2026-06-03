@@ -36,11 +36,13 @@ x-airflow-common:
     TRINO_PORT: '8080'
   volumes:
     - ../analytical_engineering:/opt/airflow/project
-    - ../analytical_engineering/pipeline:/opt/airflow/dags
+    - ../infrastructure/dags:/opt/airflow/dags
     - ../machine_learning:/opt/airflow/ml_project
     - ../machine_learning/pipeline:/opt/airflow/dags/ml
     - ../data_engineering:/opt/airflow/de_project
     - ge_airflow_logs:/opt/airflow/logs
+  extra_hosts:
+    - "ge_postgres:172.28.0.10"
   depends_on:
     ge_postgres:
       condition: service_healthy
@@ -80,7 +82,8 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - ge_network
+      ge_network:
+        ipv4_address: 172.28.0.10
 
   # ── MinIO ──────────────────────────────────────────────────────────────────
   ge_minio:
@@ -238,8 +241,8 @@ services:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9083"]
       interval: 15s
       timeout: 10s
-      retries: 10
-      start_period: 30s
+      retries: 15
+      start_period: 120s
     depends_on:
       ge_postgres:
         condition: service_healthy
@@ -347,7 +350,7 @@ services:
       DB_PORT: '5432'
       DB_USER: postgres
       DB_PASSWORD: postgres
-      DB_NAME: olist_db
+      DB_NAME: Amazon_Sales
       MINIO_ENDPOINT: geminio:9000
       MINIO_ACCESS: minioadmin
       MINIO_SECRET: minioadmin
@@ -387,7 +390,12 @@ services:
       - ../data_engineering:/app
     working_dir: /app
     command: python ingestion/consumer.py
-
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && test $(( $(date +%s) - $(date -r /tmp/healthy +%s) )) -lt 150"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       ge_kafka:
         condition: service_healthy
@@ -415,6 +423,12 @@ services:
       - ../data_engineering:/app
     working_dir: /app
     command: python ingestion/cdc_consumer.py
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/healthy && test $(( $(date +%s) - $(date -r /tmp/healthy +%s) )) -lt 150"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       ge_kafka:
         condition: service_healthy
@@ -473,7 +487,7 @@ services:
       ge_minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -494,6 +508,8 @@ services:
       TZ: Europe/Lisbon
     ports:
       - "8050:8050"
+    volumes:
+      - ..\data_analytics\dashboard:/app
     depends_on:
       ge_trino:
         condition: service_healthy
@@ -514,3 +530,6 @@ networks:
 # ---------------------------------------------------------------------------
   ge_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

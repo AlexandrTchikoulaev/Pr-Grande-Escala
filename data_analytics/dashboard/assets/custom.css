@@ -1,0 +1,11 @@
+#tabs .nav-link {
+    color: #9ca3af !important; border: none !important;
+    background: transparent !important;
+    font-size: 0.82rem; font-weight: 500; padding: 14px 16px;
+}
+#tabs .nav-link.active {
+    color: #f9fafb !important; border: none !important;
+    border-bottom: 2px solid #f9fafb !important;
+    background: transparent !important; font-weight: 600;
+}
+#tabs { border-bottom: none !important; }

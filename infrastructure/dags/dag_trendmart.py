@@ -1,16 +1,21 @@
 """
-TrendMart — Analytical Engineering DAG
+TrendMart — DAG de Orquestração
 
-Schedule: hourly  (every hour at minute 0)
-Runs Bronze → Silver → Gold Spark batch jobs, then refreshes Trino views.
-At the end of each successful run writes a Markdown report to
-analytical_engineering/relatórios/batch_YYYY-MM-DD_HH-MM.md
+Schedule: horária  (início de cada hora)
+Owner: infrastructure
 
-Dependency graph:
+A frequência horária foi definida pela equipa analytical_engineering como requisito
+de SLA para o seu contrato de entrada — a infrastructure implementa e mantém esse
+schedule através desta DAG.
+
+Encadeia os jobs Silver (data_engineering) e Gold (analytical_engineering):
     silver_clickstream ──┐
     silver_orders      ──┼──► gold_dimensions ──┬──► gold_clickstream ──┐
     silver_reviews     ──┘                      │    gold_sales       ──┼──► init_views
                                                 └──► gold_reviews     ──┘
+
+No final de cada run bem-sucedido escreve um relatório Markdown em
+analytical_engineering/relatórios/batch_YYYY-MM-DD_HH-MM.md
 """
 
 import time
@@ -23,7 +28,7 @@ from airflow.operators.python import PythonOperator
 # Default args
 # ---------------------------------------------------------------------------
 default_args = {
-    "owner":            "analytical_engineering",
+    "owner":            "infrastructure",
     "retries":          1,
     "retry_delay":      timedelta(minutes=5),
     "depends_on_past":  False,
@@ -34,13 +39,13 @@ default_args = {
 # ---------------------------------------------------------------------------
 with DAG(
     dag_id="trendmart_gold_pipeline",
-    description="Bronze → Silver → Gold batch + Trino views (hourly)",
+    description="Bronze → Silver → Gold batch + Trino views (horária)",
     schedule_interval="0 * * * *",
     start_date=datetime(2025, 1, 1),
     catchup=False,
     max_active_runs=1,
     default_args=default_args,
-    tags=["analytical_engineering", "silver", "gold", "trendmart"],
+    tags=["infrastructure", "silver", "gold", "trendmart"],
 ) as dag:
 
     # ── Shared Spark session (reused across fact tasks) ───────────────────
@@ -88,7 +93,11 @@ with DAG(
         from transformations.gold_clickstream import run
         spark = _get_shared_spark()
         t0 = time.time()
-        count = run(spark)
+        count = run(
+            spark,
+            window_start=ctx["data_interval_start"],
+            window_end=ctx["data_interval_end"],
+        )
         duration = round(time.time() - t0, 1)
         ctx["ti"].xcom_push(key="gold_clickstream_count",    value=count)
         ctx["ti"].xcom_push(key="gold_clickstream_duration", value=duration)
@@ -98,7 +107,11 @@ with DAG(
         from transformations.gold_sales import run
         spark = _get_shared_spark()
         t0 = time.time()
-        count = run(spark)
+        count = run(
+            spark,
+            window_start=ctx["data_interval_start"],
+            window_end=ctx["data_interval_end"],
+        )
         duration = round(time.time() - t0, 1)
         ctx["ti"].xcom_push(key="gold_sales_count",    value=count)
         ctx["ti"].xcom_push(key="gold_sales_duration", value=duration)
@@ -108,7 +121,11 @@ with DAG(
         from transformations.gold_reviews import run
         spark = _get_shared_spark()
         t0 = time.time()
-        count = run(spark)
+        count = run(
+            spark,
+            window_start=ctx["data_interval_start"],
+            window_end=ctx["data_interval_end"],
+        )
         duration = round(time.time() - t0, 1)
         ctx["ti"].xcom_push(key="gold_reviews_count",    value=count)
         ctx["ti"].xcom_push(key="gold_reviews_duration", value=duration)
@@ -129,7 +146,6 @@ with DAG(
         run()
         views_duration = round(time.time() - t0, 1)
 
-        # Collect task info for the batch report
         _task_meta = [
             ("silver_clickstream", "silver_clickstream_count"),
             ("silver_orders",      "silver_orders_count"),
@@ -166,9 +182,6 @@ with DAG(
             print(f"[dag] Aviso: falha ao escrever relatório de batch: {exc}")
 
     # ── Operators ─────────────────────────────────────────────────────────
-    # Streaming tasks share a checkpoint location — retrying too quickly causes
-    # CONCURRENT_STREAM_LOG_UPDATE if the previous JVM hasn't stopped yet.
-    # A 15-minute delay gives the orphaned JVM enough time to die.
     _silver_retry_args = {"retries": 1, "retry_delay": timedelta(minutes=15)}
 
     op_silver_clickstream = PythonOperator(
@@ -215,16 +228,6 @@ with DAG(
     )
 
     # ── Dependencies ──────────────────────────────────────────────────────
-    # All tasks run sequentially — each spawns a full Spark JVM inside the
-    # scheduler container, so running them in parallel exhausts memory.
-    # Dimensions must run before facts because facts resolve FKs via joins.
-    (
-        op_silver_clickstream
-        >> op_silver_orders
-        >> op_silver_reviews
-        >> op_dimensions
-        >> op_clickstream
-        >> op_sales
-        >> op_reviews
-        >> op_views
-    )
+    [op_silver_clickstream, op_silver_orders, op_silver_reviews] >> op_dimensions
+    op_dimensions >> [op_clickstream, op_sales, op_reviews]
+    [op_clickstream, op_sales, op_reviews] >> op_views

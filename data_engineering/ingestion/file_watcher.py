@@ -47,36 +47,19 @@ def _save_state(processed: set):
 
 def _parse_review_file(content: str, file_path: str) -> dict:
     """
-    Parses the structured header of a review .txt file.
-    Keeps raw_content intact — this is the unstructured field for downstream NLP.
+    Extracts review_id and order_id from the filename (the only structured metadata).
+    The file content is unstructured free text — no header parsing.
+
+    Filename convention: {review_id}_{order_id}.txt  (or _dup.txt for duplicates)
     """
-    lines = content.strip().splitlines()
-    meta = {}
-    message_lines = []
-    in_body = False
-
-    for line in lines:
-        if line.strip() == "---":
-            in_body = True
-            continue
-        if not in_body:
-            if ": " in line:
-                key, _, val = line.partition(": ")
-                meta[key.strip()] = val.strip()
-        else:
-            if not line.startswith("TITLE:"):
-                message_lines.append(line)
-            else:
-                meta["TITLE"] = line.replace("TITLE: ", "").strip()
-
+    filename = file_path.rsplit("/", 1)[-1]
+    stem = filename.removesuffix("_dup.txt").removesuffix(".txt")
+    review_id, _, order_id = stem.partition("_")
     return {
         "file_path":   file_path,
-        "review_id":   meta.get("REVIEW_ID", ""),
-        "order_id":    meta.get("ORDER_ID", ""),
-        "customer_id": meta.get("CUSTOMER_ID", ""),
-        "rating":      meta.get("RATING", "").replace("/5", ""),
-        "title":       meta.get("TITLE", ""),
-        "raw_content": content,  # full unstructured text preserved
+        "review_id":   review_id,
+        "order_id":    order_id,
+        "raw_content": content,
     }
 
 
@@ -134,7 +117,6 @@ def main():
                     content  = response["Body"].read().decode("utf-8")
                     record   = _parse_review_file(content, key)
                     record["ingested_at"] = datetime.now(_TZ).isoformat()
-                    record["source"]      = "minio"
                     batch.append(record)
                     processed.add(key)
                     total += 1

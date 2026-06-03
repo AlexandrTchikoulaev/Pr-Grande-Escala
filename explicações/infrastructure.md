@@ -4,6 +4,8 @@
 
 A equipa de Infrastructure é responsável por **definir, construir e ligar todos os serviços** que o pipeline precisa para funcionar: bases de dados, brokers de mensagens, object storage, motores de query, orquestração e processamento distribuído.
 
+É também responsável pelo **Apache Airflow e pelas DAGs de orquestração** (`infrastructure/dags/`). A infrastructure programa os schedules com as frequências definidas pelas equipas consumidoras: a analytical_engineering impõe cadência horária para o pipeline Silver → Gold; a machine_learning impõe cadência diária (03:00) para o pipeline ML.
+
 Tudo corre em Docker via `docker-compose.yml` com uma rede interna partilhada (`ge_network`).
 
 ---
@@ -15,6 +17,8 @@ infrastructure/
 ├── docker-compose.yml              # Orquestração de todos os serviços
 ├── init-db.sh                      # Script de inicialização do PostgreSQL
 ├── hive-site.xml                   # Configuração do Hive Metastore
+├── dags/
+│   └── dag_trendmart.py            # DAG horária: Silver + Gold + Views (owner: infrastructure)
 ├── dockerfiles/
 │   ├── Dockerfile.airflow          # Airflow + Java 17 + PySpark + JARs Iceberg/S3A
 │   ├── Dockerfile.hive             # Hive Metastore + driver PostgreSQL
@@ -39,7 +43,7 @@ infrastructure/
 ║  │ PostgreSQL  │   │  MinIO S3    │   │  Kafka 7.6 KRaft    │  ║
 ║  │ :5434       │   │  :9004/:9005 │   │  :29092             │  ║
 ║  │             │   │              │   │                     │  ║
-║  │  olist_db   │   │  bronze/     │   │  clickstream_events │  ║
+║  │  Amazon_Sales   │   │  bronze/     │   │  clickstream_events │  ║
 ║  │  airflow    │   │  silver/     │   │  debezium.public.   │  ║
 ║  │  hive_meta  │   │  gold/       │   │  simulated_orders   │  ║
 ║  │  store      │   │  raw-reviews/│   │                     │  ║
@@ -91,7 +95,7 @@ infrastructure/
 - **Porta:** `5434:5432`
 - **WAL configurado** para CDC: `wal_level=logical`, `max_replication_slots=5`, `max_wal_senders=5`
 - **Bases de dados criadas pelo `init-db.sh`:**
-  - `olist_db` — dados de e-commerce + `simulated_orders`
+  - `Amazon_Sales` — dados de e-commerce + `simulated_orders`
   - `airflow` — estado do Airflow (DAGs, tasks, logs)
   - `hive_metastore` — metadata das tabelas Iceberg
 - **Volume persistente:** `ge_postgres_data`
@@ -189,11 +193,11 @@ infrastructure/
 ### ge_airflow_scheduler — Scheduler Airflow
 - Deteta e executa DAGs conforme schedule
 - **Limit memória:** 3g
-- **DAGs montadas:** `analytical_engineering/pipeline/` + `machine_learning/pipeline/` (subpasta `/ml`)
+- **DAGs montadas:** `infrastructure/dags/` (principal) + `machine_learning/pipeline/` (subpasta `/ml`)
 - **Project code montado:** `analytical_engineering/` + `data_engineering/` + `machine_learning/`
 - **Responsável por dois pipelines:**
-  - `trendmart_gold_pipeline` (horário): Silver → Gold → Views via `transformations.*` e `views.*`
-  - `trendmart_ml_pipeline` (diário às 03:00): Demand Forecast + Churn via `machine_learning.models.*`
+  - `trendmart_gold_pipeline` (horário — schedule imposto pela analytical_engineering): Silver → Gold → Views
+  - `trendmart_ml_pipeline` (diário às 03:00 — schedule imposto pela machine_learning): Demand Forecast + Churn
 - **MLFLOW_TRACKING_URI:** `http://ge_mlflow:5000` (variável de ambiente)
 
 ---

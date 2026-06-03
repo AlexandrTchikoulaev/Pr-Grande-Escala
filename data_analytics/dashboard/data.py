@@ -40,8 +40,7 @@ def get_executive(days: int = 90) -> pd.DataFrame:
     return _fetch(f"""
         SELECT
             "day", total_orders, total_customers,
-            total_revenue, avg_order_value, avg_rating,
-            positive_reviews, negative_reviews
+            total_revenue, avg_order_value
         FROM lake.gold.vw_executive
         WHERE "day" >= current_date - INTERVAL '{days}' DAY
         ORDER BY "day"
@@ -62,7 +61,7 @@ def get_sales_performance(days: int = 90) -> pd.DataFrame:
 def get_funnel(days: int = 7) -> pd.DataFrame:
     return _fetch(f"""
         SELECT
-            hour, event_date, event_type, device, category,
+            hour, event_date, is_weekend, event_type, device, category,
             event_count, sessions, users
         FROM lake.gold.vw_funnel
         WHERE event_date >= current_date - INTERVAL '{days}' DAY
@@ -93,17 +92,31 @@ def get_demand_forecast() -> pd.DataFrame:
     """)
 
 
-def get_churn_scores() -> pd.DataFrame:
-    return _fetch("""
+def get_trends(days: int = 60) -> pd.DataFrame:
+    return _fetch(f"""
         SELECT
-            risk_label,
-            COUNT(*)                  AS total_customers,
-            AVG(churn_probability)    AS avg_churn_prob,
-            AVG(recency)              AS avg_recency,
-            AVG(frequency)            AS avg_frequency,
-            AVG(monetary)             AS avg_monetary,
-            MAX(model_f1)             AS model_f1,
-            MAX(model_auc)            AS model_auc
-        FROM lake.gold.ml_churn_scores
-        GROUP BY risk_label
+            purchase_date,
+            orders,
+            revenue,
+            orders_growth_pct,
+            revenue_growth_pct,
+            revenue_acceleration
+        FROM lake.gold.vw_trends
+        WHERE purchase_date >= current_date - INTERVAL '{days}' DAY
+        ORDER BY purchase_date
+    """)
+
+
+def get_category_trends(days: int = 30) -> pd.DataFrame:
+    return _fetch(f"""
+        SELECT
+            purchase_date,
+            category,
+            orders,
+            revenue,
+            orders_growth_pct,
+            revenue_growth_pct
+        FROM lake.gold.vw_category_trends
+        WHERE purchase_date >= current_date - INTERVAL '{days}' DAY
+        ORDER BY purchase_date, category
     """)

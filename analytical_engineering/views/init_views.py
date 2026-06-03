@@ -31,12 +31,8 @@ VIEWS = {
             COUNT(DISTINCT s.order_id)                  AS total_orders,
             COUNT(DISTINCT s.customer_id)               AS total_customers,
             CAST(SUM(s.total_value) AS DOUBLE)          AS total_revenue,
-            CAST(AVG(s.total_value) AS DOUBLE)          AS avg_order_value,
-            CAST(AVG(CAST(r.rating AS DOUBLE)) AS DOUBLE) AS avg_rating,
-            COUNT(DISTINCT CASE WHEN r.sentiment = 'positive' THEN r.review_id END) AS positive_reviews,
-            COUNT(DISTINCT CASE WHEN r.sentiment = 'negative' THEN r.review_id END) AS negative_reviews
+            CAST(AVG(s.total_value) AS DOUBLE)          AS avg_order_value
         FROM lake.gold.fact_sales s
-        LEFT JOIN lake.gold.fact_reviews r ON s.order_id = r.order_id
         GROUP BY s.purchase_date
     """,
 
@@ -62,12 +58,16 @@ VIEWS = {
     """,
 
     # ------------------------------------------------------------------
-    # Clickstream funnel — conversion analysis
+    # Clickstream funnel — conversion analysis (RF3.1–RF3.4)
+    # order_placed is now published to Kafka alongside all other events,
+    # so the funnel is complete directly from fact_clickstream (RF3.1).
     # ------------------------------------------------------------------
     "vw_funnel": """
         SELECT
             CAST(DATE_TRUNC('hour', fc.event_ts) AS TIMESTAMP) AS hour,
             fc.event_date,
+            dd.is_weekend,
+            dd.day_of_week,
             fc.event_type,
             fc.device,
             dc.category_en                  AS category,
@@ -75,32 +75,37 @@ VIEWS = {
             COUNT(DISTINCT fc.session_id)   AS sessions,
             COUNT(DISTINCT fc.user_id)      AS users
         FROM lake.gold.fact_clickstream fc
+        LEFT JOIN lake.gold.dim_date     dd ON fc.date_id     = dd.date_id
         LEFT JOIN lake.gold.dim_category dc ON fc.category_id = dc.category_id
         GROUP BY
             DATE_TRUNC('hour', fc.event_ts),
             fc.event_date,
+            dd.is_weekend,
+            dd.day_of_week,
             fc.event_type,
             fc.device,
             dc.category_en
     """,
 
     # ------------------------------------------------------------------
-    # Reviews sentiment — by category over time
+    # Reviews sentiment — by category and region over time (RF4.1–RF4.4)
+    # category_id and geo_id are now columns of fact_reviews itself,
+    # so no join through fact_sales is needed.
     # ------------------------------------------------------------------
     "vw_reviews": """
         SELECT
             r.review_date,
             r.sentiment,
             dc.category_en                                     AS category,
+            dg.state,
             dg.region,
             COUNT(r.review_id)                                 AS review_count,
             CAST(AVG(CAST(r.rating AS DOUBLE)) AS DOUBLE)      AS avg_rating,
             CAST(AVG(CAST(r.text_length AS DOUBLE)) AS DOUBLE) AS avg_text_length
         FROM lake.gold.fact_reviews r
-        LEFT JOIN lake.gold.fact_sales    s  ON r.order_id    = s.order_id
-        LEFT JOIN lake.gold.dim_category  dc ON s.category_id = dc.category_id
-        LEFT JOIN lake.gold.dim_geography dg ON s.geo_id      = dg.geo_id
-        GROUP BY r.review_date, r.sentiment, dc.category_en, dg.region
+        LEFT JOIN lake.gold.dim_category  dc ON r.category_id = dc.category_id
+        LEFT JOIN lake.gold.dim_geography dg ON r.geo_id      = dg.geo_id
+        GROUP BY r.review_date, r.sentiment, dc.category_en, dg.state, dg.region
     """,
 
     # ------------------------------------------------------------------
@@ -123,15 +128,7 @@ VIEWS = {
                 LAG(orders,  7) OVER (ORDER BY purchase_date) AS orders_7d_ago,
                 LAG(revenue, 7) OVER (ORDER BY purchase_date) AS revenue_7d_ago,
                 LAG(orders,  14) OVER (ORDER BY purchase_date) AS orders_14d_ago,
-                LAG(revenue, 14) OVER (ORDER BY purchase_date) AS revenue_14d_ago,
-                AVG(revenue) OVER (
-                    ORDER BY purchase_date
-                    ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-                ) AS revenue_30d_avg,
-                STDDEV_POP(CAST(revenue AS DOUBLE)) OVER (
-                    ORDER BY purchase_date
-                    ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
-                ) AS revenue_30d_stddev
+                LAG(revenue, 14) OVER (ORDER BY purchase_date) AS revenue_14d_ago
             FROM daily
         )
         SELECT
@@ -150,12 +147,7 @@ VIEWS = {
                 WHEN revenue_7d_ago > 0 AND revenue_14d_ago > 0
                 THEN ((revenue - revenue_7d_ago) / revenue_7d_ago)
                    - ((revenue_7d_ago - revenue_14d_ago) / revenue_14d_ago)
-            END AS revenue_acceleration,
-            CASE
-                WHEN revenue_30d_stddev > 0
-                     AND ABS(revenue - revenue_30d_avg) > 2 * revenue_30d_stddev
-                THEN 1 ELSE 0
-            END AS anomaly_flag
+            END AS revenue_acceleration
         FROM with_lags
     """,
 
@@ -204,15 +196,26 @@ VIEWS = {
 def run():
     conn = _get_conn()
     cursor = conn.cursor()
+    created, skipped = [], []
 
     for name, sql in VIEWS.items():
         ddl = f"CREATE OR REPLACE VIEW lake.gold.{name} AS {sql.strip()}"
-        cursor.execute(ddl)
-        print(f"[init_views] View created/replaced: {name}")
+        try:
+            cursor.execute(ddl)
+            print(f"[init_views] View created/replaced: {name}")
+            created.append(name)
+        except Exception as exc:
+            if "TABLE_NOT_FOUND" in str(exc) or "does not exist" in str(exc):
+                print(f"[init_views] Skipped {name}: tabela base ainda não existe")
+                skipped.append(name)
+            else:
+                cursor.close()
+                conn.close()
+                raise
 
     cursor.close()
     conn.close()
-    print(f"[init_views] All {len(VIEWS)} views ready.")
+    print(f"[init_views] Criadas: {len(created)}, ignoradas: {len(skipped)}/{len(VIEWS)} views.")
 
 
 if __name__ == "__main__":

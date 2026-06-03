@@ -7,7 +7,7 @@ A equipa de Data Engineering tem **duas responsabilidades principais**:
 1. **Ingestion** — consumir dados das fontes (Kafka, PostgreSQL CDC, MinIO) e escrever em Bronze (Parquet cru)
 2. **Transformation** — ler Bronze com Spark e escrever tabelas limpas e tipadas em Silver (Iceberg)
 
-Os jobs de Transformation são orquestrados pelo Airflow (juntamente com os Gold), correndo em batch horário.
+Os jobs de Transformation são escritos e mantidos pela data_engineering, mas **orquestrados pela infrastructure** via DAG Airflow (`infrastructure/dags/dag_trendmart.py`), com cadência horária definida pela analytical_engineering como requisito de SLA.
 
 ---
 
@@ -41,8 +41,8 @@ data_engineering/
 ╔══════════════════════════════════════════════════════════════════╗
 ║                    DATA SOURCES (upstream)                       ║
 ╠══════════════════════════════════════════════════════════════════╣
-║  PostgreSQL: simulated_orders    Kafka: clickstream_events       ║
-║  (WAL log — escrita pelo sim.)   (JSON — escrito pelo sim.)      ║
+║  PostgreSQL: orders, order_items  Kafka: clickstream_events       ║
+║  (WAL log — escrita pelo sim.)    (JSON — escrito pelo sim.)     ║
 ║                                                                  ║
 ║  MinIO: raw-reviews/             (ficheiros .txt)                ║
 ╚══════╦═══════════════════════╦══════════════════════════╦════════╝
@@ -54,9 +54,9 @@ data_engineering/
 │  connector   │    │  Lê tópico       │    │  Poll ao MinIO       │
 │  (registo    │    │  clickstream_    │    │  raw-reviews/ cada   │
 │  automático  │    │  events          │    │  30s. Lê .txt novos, │
-│  via curl)   │    │                  │    │  faz parse ao header │
-│              │    │  Buffer: 500 rec │    │  (REVIEW_ID,         │
-│  Captura WAL │    │  ou 30s          │    │  ORDER_ID, RATING…)  │
+│  via curl)   │    │                  │    │  extrai review_id e  │
+│              │    │  Buffer: 500 rec │    │  order_id do nome do │
+│  Captura WAL │    │  ou 30s          │    │  ficheiro            │
 │  do Postgres │    │                  │    │  guarda estado em    │
 │  → publica   │    │  Adiciona        │    │  .watcher_state.json │
 │  no tópico:  │    │  ingested_at     │    │  para não repetir    │
@@ -148,8 +148,8 @@ data_engineering/
 
 ### debezium/connector.json
 - Regista o conector Debezium no Kafka Connect (feito automaticamente pelo `ge_debezium_init` no Docker)
-- Monitoriza a tabela `public.simulated_orders` no PostgreSQL via WAL (`pgoutput`)
-- Publica mudanças no tópico Kafka `debezium.public.simulated_orders`
+- Monitoriza as tabelas `public.orders` e `public.order_items` no PostgreSQL via WAL (`pgoutput`)
+- Publica mudanças nos tópicos Kafka `debezium.public.orders` e `debezium.public.order_items`
 - Snapshot mode: `initial` — faz snapshot completo na primeira arrancada
 
 ### ingestion/consumer.py
@@ -160,18 +160,19 @@ data_engineering/
 - Escreve Parquet particionado em `bronze/clickstream/year=.../month=.../day=.../hour=.../batch_<ts>.parquet`
 
 ### ingestion/cdc_consumer.py
-- Consome o tópico Debezium `debezium.public.simulated_orders`
+- Consome os tópicos Debezium `debezium.public.orders` e `debezium.public.order_items`
+- Faz routing por nome de tabela: eventos `orders` → `bronze/orders/`, eventos `order_items` → `bronze/order_items/`
 - Extrai apenas o payload `after` (ignora `before` e deletes)
 - Processa operações: `c` (create), `u` (update), `r` (read/snapshot)
 - Adiciona `cdc_operation`, `cdc_ts_ms`, `ingested_at`, `source=debezium`
 - Flush: 500 registos **ou** 30 segundos
-- Escreve Parquet em `bronze/orders/year=.../month=.../day=.../hour=.../batch_<ts>.parquet`
+- Escreve Parquet em `bronze/orders/` e `bronze/order_items/` (particionado por year/month/day/hour)
 
 ### ingestion/file_watcher.py
 - Faz poll ao bucket MinIO `raw-reviews/` a cada 30 segundos
 - Lê apenas ficheiros `.txt` ainda não processados (estado persistido em `.watcher_state.json`)
-- Parse do header estruturado do ficheiro: `REVIEW_ID`, `ORDER_ID`, `CUSTOMER_ID`, `RATING`, `TITLE`
-- Preserva `raw_content` intacto para NLP downstream
+- Extrai `review_id` e `order_id` do nome do ficheiro (`{review_id}_{order_id}.txt`) por partição no caractere `_`; lida com o sufixo `_dup.txt` das submissões duplicadas
+- Preserva `raw_content` intacto (texto livre não estruturado) — a extracção de rating é feita na camada Silver
 - Flush imediato por batch (todos os ficheiros novos encontrados no poll)
 - Escreve Parquet em `bronze/reviews/year=.../month=.../day=.../batch_<ts>.parquet`
 
@@ -209,14 +210,12 @@ data_engineering/
 
 ### transformation/silver_reviews.py
 - Spark batch com `trigger(availableNow=True)`
-- Lê Parquet Bronze com schema explícito
-- Filtra: `review_id` e `order_id` não nulos **nem vazios**
-- Extrai corpo da review com regex: tudo após o separador `---` no `raw_content`
-- Valida rating: extrai apenas dígitos do campo (lida com `"N/A/5"`, `"6/5"`, `"0/5"`); filtra valores fora do intervalo [1,5]
-- Corrige encoding: substitui sequências UTF-8 lidas como Latin-1 (`"Ã£"` → `"ã"`, etc.) — 10 pares de substituição com `regexp_replace`
-- Filtra `message` vazio ou só whitespace após extração
+- Lê Parquet Bronze com schema explícito (`file_path`, `review_id`, `order_id`, `raw_content`, `ingested_at`, `source`)
+- Filtra: `review_id` e `order_id` não nulos **nem vazios** (extraídos do filename pelo file_watcher)
+- Extrai rating do texto livre com **dois padrões de regex** (dual-regex): `"Dou X estrelas em 5"` e `"Classifico este produto com X/5"`; toma o primeiro match não vazio; descarta registos sem rating válido em [1, 5]
+- O `raw_content` completo é usado como `message` — não há separação de cabeçalho/corpo porque o ficheiro é texto livre desde o início
+- Filtra `message` vazio ou só whitespace
 - Calcula `text_length` (contagem de palavras com `split(\s+)`)
-- Mantém `message` normalizado para análise de sentimento downstream (NLP)
 - **Deduplicação de submissões duplas**: usa `foreachBatch` — dentro de cada batch mantém o registo mais recente por `review_id`; entre batches usa `MERGE INTO` (insert-only) para não duplicar reviews já existentes na Silver
 - Checkpoint em `s3a://silver/_checkpoints/reviews`
 - Expõe função `run(spark=None)` — invocada pelo Airflow DAG
@@ -260,14 +259,12 @@ data_engineering/
 ### lake.silver.reviews
 | Coluna | Tipo | Descrição |
 |---|---|---|
-| review_id | STRING | Identificador único da review |
-| order_id | STRING | Encomenda associada |
-| customer_id | STRING | Cliente que escreveu a review |
-| rating | INTEGER | Pontuação 1-5 |
-| title | STRING | Título da review (pode estar vazio) |
-| message | STRING | Texto livre — fonte não estruturada |
+| review_id | STRING | Extraído do nome do ficheiro (`{review_id}_{order_id}.txt`) |
+| order_id | STRING | Extraído do nome do ficheiro; chave de join com silver.orders |
+| rating | INTEGER | Extraído do texto livre por dual-regex; intervalo [1, 5] |
+| message | STRING | Texto completo da review — não estruturado |
 | text_length | INTEGER | Contagem de palavras |
-| ingested_at | TIMESTAMP | Quando foi ingerido |
+| ingested_at | TIMESTAMP | Quando foi ingerido pelo file_watcher |
 
 ---
 
@@ -277,7 +274,7 @@ data_engineering/
 ```
 KAFKA_BOOTSTRAP     = localhost:29092
 CLICKSTREAM_TOPIC   = clickstream_events
-CDC_TOPIC           = debezium.public.simulated_orders
+CDC_TOPICS          = [debezium.public.orders, debezium.public.order_items]
 GROUP_CLICKSTREAM   = de_clickstream_consumer
 GROUP_CDC           = de_cdc_consumer
 BRONZE_BUCKET       = bronze

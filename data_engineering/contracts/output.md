@@ -3,6 +3,12 @@
 Silver Iceberg tables delivered to `analytical_engineering`.
 Catalog: `lake` (Hive Metastore). Warehouse: `s3a://silver/`.
 
+## Frequência de actualização
+
+A frequência de actualização das tabelas Silver é **horária**, determinada pelo requisito de SLA da `analytical_engineering` e implementada pela equipa `infrastructure` através da DAG `trendmart_gold_pipeline` (`infrastructure/dags/dag_trendmart.py`, `schedule_interval="0 * * * *"`).
+
+A data_engineering é responsável pelo código de transformação (jobs Spark Silver); a infrastructure é responsável pelo agendamento e execução desse código.
+
 ---
 
 ## lake.silver.clickstream
@@ -37,8 +43,8 @@ Catalog: `lake` (Hive Metastore). Warehouse: `s3a://silver/`.
 | freight_value | DOUBLE    | Freight cost                            |
 | total_value   | DOUBLE    | price + freight_value                   |
 | purchase_ts   | TIMESTAMP | Purchase timestamp (UTC)                |
-| state         | STRING    | Customer state (BR)                     |
-| region        | STRING    | Brazilian region (derived from state)   |
+| state         | STRING    | Customer state (BR); NULL if invalid    |
+| region        | STRING    | Brazilian region; "Desconhecido" if state is NULL |
 | ingested_at   | TIMESTAMP | When this record was ingested           |
 
 ---

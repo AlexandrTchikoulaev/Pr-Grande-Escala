@@ -108,12 +108,12 @@ data_sources/
   │  clickstream│ │simulated_│ │  raw-reviews/  │
   │  _events   │ │orders    │ │                │
   │            │ │          │ │  YYYY-MM-DD/   │
-  │  JSON      │ │  INSERT  │ │  order_id.txt  │
-  │  por evento│ │  ON      │ │                │
-  │  (exceto   │ │  CONFLICT│ │  Ficheiro .txt │
-  │  order_    │ │  DO      │ │  com header    │
-  │  placed)   │ │  NOTHING │ │  estruturado + │
-  │            │ │          │ │  body livre    │
+  │  JSON      │ │  INSERT  │ │  {review_id}_  │
+  │  por evento│ │  ON      │ │  {order_id}.txt│
+  │  (exceto   │ │  CONFLICT│ │                │
+  │  order_    │ │  DO      │ │  Texto livre — │
+  │  placed)   │ │  NOTHING │ │  não estrut.   │
+  │            │ │          │ │  rating em lng │
   └────────────┘ └──────────┘ └────────────────┘
 ```
 
@@ -200,7 +200,7 @@ session_start
 - `flush()` chamado no shutdown para garantir entrega de mensagens pendentes
 
 ### simulator/db_writer.py
-- Insere compras na tabela `simulated_orders` do PostgreSQL (`olist_db`)
+- Insere compras nas tabelas `orders` e `order_items` do PostgreSQL (`Amazon_Sales`) via schema relacional
 - `autocommit=False` — commit após cada INSERT
 - `ON CONFLICT (order_id) DO NOTHING` — idempotente
 - `noop_update_purchase()` — faz `UPDATE SET state=state` para gerar um evento CDC `u` sem alterar dados; simula re-delivery do Debezium
@@ -208,20 +208,22 @@ session_start
 
 ### simulator/review_writer.py
 - Escreve reviews como ficheiros `.txt` no MinIO bucket `raw-reviews`
-- Path: `raw-reviews/{YYYY-MM-DD}/{order_id}.txt`
-- Formato do ficheiro:
+- Path: `raw-reviews/{YYYY-MM-DD}/{review_id}_{order_id}.txt`
+- O `review_id` e o `order_id` são os únicos metadados estruturados — estão no nome do ficheiro, não no conteúdo
+- Formato do ficheiro (texto livre, sem header):
   ```
-  REVIEW_ID: <uuid>
-  ORDER_ID: <uuid>
-  CUSTOMER_ID: <string>
-  RATING: <1-5>/5
-  TIMESTAMP: <ISO 8601>
-  ---
-  TITLE: <texto opcional>
-
-  <mensagem livre — fonte não estruturada>
+  Boa tarde, o meu nome é <nome inventado> e venho partilhar a minha
+  opinião sobre um produto da categoria <categoria>.
+  <mensagem real do dataset Olist>
+  Dou 4 estrelas em 5.
   ```
-- `write_review_duplicate()` — escreve o mesmo conteúdo com key `{YYYY-MM-DD}/{review_id}-dup.txt`; como o `file_watcher` rastreia por key S3, este ficheiro é processado independentemente, resultando em dois registos Bronze com o mesmo `review_id`
+  ou, na forma alternativa (50% dos casos):
+  ```
+  ...
+  Classifico este produto com 4/5.
+  ```
+- Rating expresso em linguagem natural em uma de duas formas (escolha aleatória); a camada Silver extrai com dual-regex
+- `write_review_duplicate()` — escreve o mesmo conteúdo com key `{YYYY-MM-DD}/{review_id}_{order_id}_dup.txt`; o `file_watcher` processa-o independentemente, resultando em dois registos Bronze com o mesmo `review_id`, testando a deduplicação da Silver
 - Cria o bucket se não existir
 
 ### simulator/noise.py
@@ -229,11 +231,9 @@ Módulo de injeção controlada de ruído — simula problemas reais de qualidad
 
 | Fonte | Problema simulado | Probabilidade |
 |---|---|---|
-| **Reviews** | Rating inválido (`0`, `6`, `-1`, `N/A`) | 5% |
-| **Reviews** | Campo em branco (`review_id`, `order_id`, `customer_id`) | 4% |
+| **Reviews** | Rating expresso com valor inválido no texto (`0`, `6`, etc.) | 5% |
 | **Reviews** | Mensagem vazia / whitespace | 3% |
-| **Reviews** | Corrupção de encoding (UTF-8 lido como Latin-1) | 7% |
-| **Reviews** | Submissão duplicada (dois ficheiros, mesmo `review_id`) | 5% |
+| **Reviews** | Submissão duplicada (`{review_id}_{order_id}_dup.txt`, mesmo `review_id`) | 5% |
 | **Orders** | Price negativo ou zero | 4% |
 | **Orders** | State com casing errado (`"sp"`) ou espaços (`" SP "`) ou typo (`"SP0"`) | 6% |
 | **Orders** | Category com espaços em volta | 5% |
@@ -251,8 +251,8 @@ A justificação por fonte é intencional: **reviews** são texto humano (mais s
 | Output | Destino | Formato | Conteúdo |
 |---|---|---|---|
 | **Clickstream** | Kafka `clickstream_events` | JSON | Todos os eventos exceto `order_placed` |
-| **Compras** | PostgreSQL `olist_db.simulated_orders` | SQL INSERT | Dados estruturados da encomenda |
-| **Reviews** | MinIO `raw-reviews/` | `.txt` | Header estruturado + body livre |
+| **Compras** | PostgreSQL `Amazon_Sales` (tabelas `orders` + `order_items`) | SQL INSERT | Dados estruturados da encomenda |
+| **Reviews** | MinIO `raw-reviews/` | `.txt` | Texto livre (rating em linguagem natural; IDs no nome do ficheiro) |
 
 ---
 
@@ -264,7 +264,7 @@ CLICKSTREAM_TOPIC    = clickstream_events
 
 DB_HOST              = localhost
 DB_PORT              = 5434
-DB_NAME              = olist_db
+DB_NAME              = Amazon_Sales
 
 MINIO_ENDPOINT       = localhost:9004
 REVIEWS_BUCKET       = raw-reviews

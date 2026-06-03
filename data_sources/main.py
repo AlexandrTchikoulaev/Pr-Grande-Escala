@@ -3,7 +3,7 @@ data_sources — entry point.
 
 Runs the e-commerce simulator continuously:
   - Clickstream events  → Kafka (topic: clickstream_events)
-  - Purchases           → PostgreSQL (table: simulated_orders)
+  - Purchases           → PostgreSQL (tables: customers, sellers, products, orders, order_items)
   - Reviews             → MinIO (bucket: raw-reviews, as .txt files)
 """
 
@@ -33,7 +33,7 @@ def main():
     # Build connections
     producer = kafka_producer.build_producer()
     db_conn  = db_writer.build_connection()
-    db_writer.ensure_table(db_conn)
+    db_writer.ensure_tables(db_conn)
     minio    = review_writer.build_client()
 
     # Counters

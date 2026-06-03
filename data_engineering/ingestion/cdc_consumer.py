@@ -1,10 +1,15 @@
 """
 CDC consumer — reads Debezium change events from Kafka and writes to Bronze (Parquet on MinIO).
 
-Debezium publishes PostgreSQL WAL changes to: debezium.public.simulated_orders
+Debezium publishes PostgreSQL WAL changes to two topics:
+  debezium.public.orders       → bronze/orders/
+  debezium.public.order_items  → bronze/order_items/
+
 Each message payload contains: { before, after, op, ts_ms, source }
 
-Bronze path: bronze/orders/year=YYYY/month=MM/day=DD/hour=HH/batch_<ts>.parquet
+Bronze paths:
+  bronze/orders/year=YYYY/month=MM/day=DD/hour=HH/batch_<ts>.parquet
+  bronze/order_items/year=YYYY/month=MM/day=DD/hour=HH/batch_<ts>.parquet
 """
 
 import io
@@ -13,6 +18,7 @@ import time
 import signal
 import sys
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 _TZ = ZoneInfo("Europe/Lisbon")
@@ -40,54 +46,65 @@ def _build_minio():
     return client
 
 
-def _parse_debezium(raw: dict) -> dict | None:
-    """Extracts the relevant fields from a Debezium CDC envelope."""
-    payload = raw.get("payload", raw)  # handle schema-wrapped and raw formats
+def _parse_debezium(raw: dict) -> tuple[str | None, dict | None]:
+    """Extracts table name and relevant fields from a Debezium CDC envelope.
+    Returns (table_name, record) or (None, None) if the event should be ignored.
+    """
+    payload = raw.get("payload", raw)
     op = payload.get("op")
 
-    # Only process inserts and updates — ignore deletes and schema changes
     if op not in ("c", "u", "r"):
-        return None
+        return None, None
 
     after = payload.get("after")
     if not after:
-        return None
+        return None, None
 
-    return {
-        "order_id":           after.get("order_id"),
-        "session_id":         after.get("session_id"),
-        "customer_id":        after.get("customer_id"),
-        "product_id":         after.get("product_id"),
-        "seller_id":          after.get("seller_id"),
-        "category":           after.get("category"),
-        "price":              after.get("price"),
-        "freight_value":      after.get("freight_value"),
-        "purchase_timestamp": after.get("purchase_timestamp"),
-        "state":              after.get("state"),
-        "cdc_operation":      op,
-        "cdc_ts_ms":          payload.get("ts_ms"),
-    }
+    source = payload.get("source", {})
+    table = source.get("table")
+
+    if table == "orders":
+        record = {
+            "order_id":           after.get("order_id"),
+            "customer_id":        after.get("customer_id"),
+            "session_id":         after.get("session_id"),
+            "purchase_timestamp": after.get("purchase_timestamp"),
+            "state":              after.get("state"),
+            "cdc_ts_ms":          payload.get("ts_ms"),
+        }
+    elif table == "order_items":
+        record = {
+            "order_item_id": after.get("order_item_id"),
+            "order_id":      after.get("order_id"),
+            "product_id":    after.get("product_id"),
+            "seller_id":     after.get("seller_id"),
+            "price":         after.get("price"),
+            "freight_value": after.get("freight_value"),
+            "category":      after.get("category"),
+            "cdc_ts_ms":     payload.get("ts_ms"),
+        }
+    else:
+        return None, None
+
+    return table, record
 
 
-def _flush(minio, buffer: list):
+def _flush(minio, buffer: list, prefix: str, label: str):
     if not buffer:
         return
-
     now = datetime.now(_TZ)
     key = (
-        f"orders/year={now.year}/month={now.month:02d}/"
+        f"{prefix}/year={now.year}/month={now.month:02d}/"
         f"day={now.day:02d}/hour={now.hour:02d}/"
         f"batch_{int(now.timestamp())}.parquet"
     )
-
     table = pa.Table.from_pylist(buffer)
     buf = io.BytesIO()
     pq.write_table(table, buf)
     buf.seek(0)
-
     minio.put_object(Bucket=config.BRONZE_BUCKET, Key=key, Body=buf.getvalue())
-    print(f"[cdc_consumer] Flushed {len(buffer)} orders → bronze/{key}")
-    record_flush("orders", len(buffer), key)
+    print(f"[cdc_consumer] Flushed {len(buffer)} {label} → bronze/{key}")
+    record_flush(label, len(buffer), key)
 
 
 def main():
@@ -97,25 +114,38 @@ def main():
         "auto.offset.reset":  "earliest",
         "enable.auto.commit": True,
     })
-    consumer.subscribe([config.CDC_TOPIC])
+    consumer.subscribe(config.CDC_TOPICS)
     minio = _build_minio()
 
-    buffer: list[dict] = []
+    orders_buf:      list[dict] = []
+    order_items_buf: list[dict] = []
     last_flush = time.time()
-    total = 0
+    total_orders = 0
+    total_items  = 0
+
+    def _flush_all():
+        _flush(minio, orders_buf,      "orders",      "orders")
+        _flush(minio, order_items_buf, "order_items", "order_items")
+        orders_buf.clear()
+        order_items_buf.clear()
 
     def _shutdown(sig, frame):
         print("\n[cdc_consumer] Shutting down...")
-        _flush(minio, buffer)
+        _flush_all()
         consumer.close()
-        print(f"[cdc_consumer] Total orders ingested: {total}")
-        record_shutdown("orders", total)
+        print(f"[cdc_consumer] Total — orders: {total_orders} | order_items: {total_items}")
+        record_shutdown("orders", total_orders + total_items)
         sys.exit(0)
 
     signal.signal(signal.SIGINT,  _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    print(f"[cdc_consumer] Listening on CDC topic: {config.CDC_TOPIC}")
+    print(f"[cdc_consumer] Listening on CDC topics: {config.CDC_TOPICS}")
+
+    _HEALTHY = Path("/tmp/healthy")
+    _has_had_assignment = False
+    _last_assigned = time.time()
+    _last_assignment_check = 0.0
 
     while True:
         msg = consumer.poll(timeout=1.0)
@@ -127,18 +157,33 @@ def main():
                 print(f"[cdc_consumer] Error: {msg.error()}")
         else:
             raw = json.loads(msg.value().decode("utf-8"))
-            record = _parse_debezium(raw)
+            table, record = _parse_debezium(raw)
             if record:
-                record["ingested_at"] = datetime.now(_TZ).isoformat()
-                record["source"]      = "debezium"
-                buffer.append(record)
-                total += 1
+                now_str = datetime.now(_TZ).isoformat()
+                record["ingested_at"] = now_str
+                if table == "orders":
+                    orders_buf.append(record)
+                    total_orders += 1
+                elif table == "order_items":
+                    order_items_buf.append(record)
+                    total_items += 1
 
         elapsed = time.time() - last_flush
-        if len(buffer) >= config.BUFFER_SIZE or (buffer and elapsed >= config.FLUSH_INTERVAL):
-            _flush(minio, buffer)
-            buffer.clear()
+        total_buf = len(orders_buf) + len(order_items_buf)
+        if total_buf >= config.BUFFER_SIZE or (total_buf and elapsed >= config.FLUSH_INTERVAL):
+            _flush_all()
             last_flush = time.time()
+
+        now = time.time()
+        if now - _last_assignment_check >= 5:
+            _last_assignment_check = now
+            if consumer.assignment():
+                _has_had_assignment = True
+                _last_assigned = now
+                _HEALTHY.touch()
+            elif _has_had_assignment and now - _last_assigned > 120:
+                print("[cdc_consumer] No Kafka partition assignment for 2 min — exiting for restart")
+                sys.exit(1)
 
 
 if __name__ == "__main__":

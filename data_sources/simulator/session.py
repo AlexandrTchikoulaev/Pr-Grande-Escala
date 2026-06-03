@@ -144,8 +144,9 @@ def simulate_session(data: dict) -> tuple[list[dict], dict | None, dict | None]:
         events.append(_event(session_id, user_id, device, "session_end", ts, {"reason": "checkout_abandon"}))
         return events, None, None
 
-    # --- order_placed (goes to PostgreSQL, not Kafka) ---
-    order_id = str(uuid.uuid4())
+    # --- order_placed (goes to Kafka + PostgreSQL relational DB) ---
+    order_id      = str(uuid.uuid4())
+    order_item_id = str(uuid.uuid4())
     ts = _next_ts(ts)
     events.append(_event(session_id, user_id, device, "order_placed", ts, {
         "order_id":   order_id,
@@ -154,16 +155,19 @@ def simulate_session(data: dict) -> tuple[list[dict], dict | None, dict | None]:
     }))
 
     purchase = {
-        "order_id":          order_id,
-        "session_id":        session_id,
-        "customer_id":       user_id,
-        "product_id":        product["product_id"],
-        "seller_id":         product["seller_id"],
-        "category":          product["category"],
-        "price":             product["price"],
-        "freight_value":     product["freight"],
+        "order_id":           order_id,
+        "order_item_id":      order_item_id,
+        "session_id":         session_id,
+        "customer_id":        user_id,
+        "city":               customer["city"],
+        "product_id":         product["product_id"],
+        "seller_id":          product["seller_id"],
+        "category":           product["category"],
+        "photos_qty":         product["photos_qty"],
+        "price":              product["price"],
+        "freight_value":      product["freight"],
         "purchase_timestamp": _now_str(ts),
-        "state":             customer["state"],
+        "state":              customer["state"],
     }
 
     ts = _next_ts(ts)
@@ -181,6 +185,7 @@ def simulate_session(data: dict) -> tuple[list[dict], dict | None, dict | None]:
             "score":      review_ref["review_score"],
             "title":      review_ref["title"],
             "message":    review_ref["message"],
+            "category":   product["category"],
             "timestamp":  _now_str(review_ts),
             "delay_seconds": delay,
         }

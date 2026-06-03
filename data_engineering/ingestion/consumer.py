@@ -10,6 +10,7 @@ import time
 import signal
 import sys
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 _TZ = ZoneInfo("Europe/Lisbon")
@@ -85,6 +86,11 @@ def main():
 
     print(f"[consumer] Listening on topic: {config.CLICKSTREAM_TOPIC}")
 
+    _HEALTHY = Path("/tmp/healthy")
+    _has_had_assignment = False
+    _last_assigned = time.time()
+    _last_assignment_check = 0.0
+
     while True:
         msg = consumer.poll(timeout=1.0)
 
@@ -96,7 +102,6 @@ def main():
         else:
             record = json.loads(msg.value().decode("utf-8"))
             record["ingested_at"] = datetime.now(_TZ).isoformat()
-            record["source"]      = "kafka"
             # flatten properties to string — Bronze keeps data raw
             if isinstance(record.get("properties"), dict):
                 record["properties"] = json.dumps(record["properties"])
@@ -108,6 +113,18 @@ def main():
             _flush(minio, buffer)
             buffer.clear()
             last_flush = time.time()
+
+        # Check Kafka partition assignment every 5 s to detect session loss
+        now = time.time()
+        if now - _last_assignment_check >= 5:
+            _last_assignment_check = now
+            if consumer.assignment():
+                _has_had_assignment = True
+                _last_assigned = now
+                _HEALTHY.touch()
+            elif _has_had_assignment and now - _last_assigned > 120:
+                print("[consumer] No Kafka partition assignment for 2 min — exiting for restart")
+                sys.exit(1)
 
 
 if __name__ == "__main__":

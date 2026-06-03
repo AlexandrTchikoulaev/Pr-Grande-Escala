@@ -7,10 +7,6 @@ import json
 from confluent_kafka import Producer
 from simulator import config
 
-# Events that are NOT published to Kafka (handled by other sinks)
-_EXCLUDED_EVENTS = {"order_placed"}
-
-
 def build_producer() -> Producer:
     producer = Producer({"bootstrap.servers": config.KAFKA_BOOTSTRAP})
     print(f"[producer] Connected to Kafka at {config.KAFKA_BOOTSTRAP}")
@@ -25,8 +21,6 @@ def _delivery_report(err, msg):
 def publish_events(producer: Producer, events: list[dict]) -> int:
     count = 0
     for event in events:
-        if event["event_type"] in _EXCLUDED_EVENTS:
-            continue
         producer.produce(
             topic=config.CLICKSTREAM_TOPIC,
             key=event["session_id"],

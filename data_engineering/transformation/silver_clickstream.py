@@ -55,12 +55,18 @@ def _kill_orphan_spark_jvms(label: str) -> None:
 
 
 def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
-    """Delete all checkpoint files belonging to uncommitted batches.
+    """Delete uncommitted batch files and stale source-log entries.
 
-    Scans the entire checkpoint tree and removes any file whose name matches
-    an orphaned batch ID (present in offsets/ but absent from commits/).
-    This covers offsets/, sources/<n>/, and stale .tmp files in one pass.
+    Orphaned batches (in offsets/ but not commits/) are deleted.  Source-log
+    entries are only deleted when they exceed the logOffset referenced by the
+    latest committed offset file — because a committed batch may reference a
+    source-log entry whose ID is higher than the batch ID itself (the file
+    source writes multiple log entries per batch when availableNow=True drains
+    a large backlog).  Deleting a source-log entry still referenced by a
+    committed offset causes "batches (N, M) don't exist" on the next run.
     """
+    import json as _json
+
     path_no_proto = checkpoint_path.removeprefix("s3a://")
     bucket, _, prefix = path_no_proto.partition("/")
 
@@ -84,8 +90,39 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
             pass
         return ids
 
-    orphaned = _batch_ids("offsets") - _batch_ids("commits")
-    if not orphaned:
+    def _log_offset_of_committed_batch(batch_id: int) -> int:
+        """Parse the logOffset from the offset file of a committed batch.
+
+        The offset file format is three newline-separated sections:
+          v1
+          {batchMetadata JSON}
+          {sourceOffset JSON}   ← contains {"logOffset": N}
+
+        Returns the logOffset value, or batch_id if parsing fails.
+        """
+        try:
+            obj = s3.get_object(Bucket=bucket, Key=f"{prefix}/offsets/{batch_id}")
+            content = obj["Body"].read().decode()
+            for line in content.splitlines():
+                line = line.strip()
+                if '"logOffset"' in line:
+                    return int(_json.loads(line).get("logOffset", batch_id))
+        except (ClientError, ValueError, KeyError):
+            pass
+        return batch_id
+
+    committed = _batch_ids("commits")
+    orphaned = _batch_ids("offsets") - committed
+    max_committed_id = max(committed) if committed else -1
+
+    # The source-log entry referenced by the latest committed offset is the
+    # true high-water mark: never delete source-log entries at or below it.
+    safe_log_offset = _log_offset_of_committed_batch(max_committed_id) if max_committed_id >= 0 else -1
+
+    stale_source_ids = {bid for bid in _batch_ids("sources/0") if bid > safe_log_offset}
+
+    all_to_clean = orphaned | stale_source_ids
+    if not all_to_clean:
         return
 
     # Scan the entire checkpoint tree: catches offsets/, sources/0/, and .tmp leftovers
@@ -97,7 +134,7 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
                 key = obj["Key"]
                 name = key.rsplit("/", 1)[-1].lstrip(".")  # strip leading dot from .N.tmp
                 base = name.removesuffix(".tmp")
-                if base.isdigit() and int(base) in orphaned:
+                if base.isdigit() and int(base) in all_to_clean:
                     to_delete.append({"Key": key})
     except ClientError as exc:
         print(f"[{label}] Warning: checkpoint scan error: {exc}")
@@ -107,7 +144,7 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
 
     for i in range(0, len(to_delete), 1000):
         s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete[i:i + 1000]})
-    print(f"[{label}] Repaired checkpoint: deleted {len(to_delete)} file(s) for batches {sorted(orphaned)}")
+    print(f"[{label}] Repaired checkpoint: deleted {len(to_delete)} file(s) for batches {sorted(all_to_clean)}")
 
 
 def _has_bronze_data(prefix: str) -> bool:
@@ -134,7 +171,6 @@ BRONZE_SCHEMA = StructType([
     StructField("device",      StringType()),
     StructField("properties",  StringType()),  # JSON blob
     StructField("ingested_at", StringType()),
-    StructField("source",      StringType()),
 ])
 
 PROPERTIES_SCHEMA = StructType([

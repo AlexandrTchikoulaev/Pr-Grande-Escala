@@ -56,12 +56,18 @@ def _kill_orphan_spark_jvms(label: str) -> None:
 
 
 def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
-    """Delete all checkpoint files belonging to uncommitted batches.
+    """Delete uncommitted batch files and stale source-log entries.
 
-    Scans the entire checkpoint tree and removes any file whose name matches
-    an orphaned batch ID (present in offsets/ but absent from commits/).
-    This covers offsets/, sources/<n>/, and stale .tmp files in one pass.
+    Orphaned batches (in offsets/ but not commits/) are deleted.  Source-log
+    entries are only deleted when they exceed the logOffset referenced by the
+    latest committed offset file — because a committed batch may reference a
+    source-log entry whose ID is higher than the batch ID itself (the file
+    source writes multiple log entries per batch when availableNow=True drains
+    a large backlog).  Deleting a source-log entry still referenced by a
+    committed offset causes "batches (N, M) don't exist" on the next run.
     """
+    import json as _json
+
     path_no_proto = checkpoint_path.removeprefix("s3a://")
     bucket, _, prefix = path_no_proto.partition("/")
 
@@ -85,8 +91,39 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
             pass
         return ids
 
-    orphaned = _batch_ids("offsets") - _batch_ids("commits")
-    if not orphaned:
+    def _log_offset_of_committed_batch(batch_id: int) -> int:
+        """Parse the logOffset from the offset file of a committed batch.
+
+        The offset file format is three newline-separated sections:
+          v1
+          {batchMetadata JSON}
+          {sourceOffset JSON}   ← contains {"logOffset": N}
+
+        Returns the logOffset value, or batch_id if parsing fails.
+        """
+        try:
+            obj = s3.get_object(Bucket=bucket, Key=f"{prefix}/offsets/{batch_id}")
+            content = obj["Body"].read().decode()
+            for line in content.splitlines():
+                line = line.strip()
+                if '"logOffset"' in line:
+                    return int(_json.loads(line).get("logOffset", batch_id))
+        except (ClientError, ValueError, KeyError):
+            pass
+        return batch_id
+
+    committed = _batch_ids("commits")
+    orphaned = _batch_ids("offsets") - committed
+    max_committed_id = max(committed) if committed else -1
+
+    # The source-log entry referenced by the latest committed offset is the
+    # true high-water mark: never delete source-log entries at or below it.
+    safe_log_offset = _log_offset_of_committed_batch(max_committed_id) if max_committed_id >= 0 else -1
+
+    stale_source_ids = {bid for bid in _batch_ids("sources/0") if bid > safe_log_offset}
+
+    all_to_clean = orphaned | stale_source_ids
+    if not all_to_clean:
         return
 
     # Scan the entire checkpoint tree: catches offsets/, sources/0/, and .tmp leftovers
@@ -98,7 +135,7 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
                 key = obj["Key"]
                 name = key.rsplit("/", 1)[-1].lstrip(".")  # strip leading dot from .N.tmp
                 base = name.removesuffix(".tmp")
-                if base.isdigit() and int(base) in orphaned:
+                if base.isdigit() and int(base) in all_to_clean:
                     to_delete.append({"Key": key})
     except ClientError as exc:
         print(f"[{label}] Warning: checkpoint scan error: {exc}")
@@ -108,7 +145,7 @@ def _repair_checkpoint(checkpoint_path: str, label: str) -> None:
 
     for i in range(0, len(to_delete), 1000):
         s3.delete_objects(Bucket=bucket, Delete={"Objects": to_delete[i:i + 1000]})
-    print(f"[{label}] Repaired checkpoint: deleted {len(to_delete)} file(s) for batches {sorted(orphaned)}")
+    print(f"[{label}] Repaired checkpoint: deleted {len(to_delete)} file(s) for batches {sorted(all_to_clean)}")
 
 
 def _has_bronze_data(prefix: str) -> bool:
@@ -124,23 +161,31 @@ def _has_bronze_data(prefix: str) -> bool:
     except ClientError:
         return False
 
-BRONZE_PATH = f"s3a://{config.BRONZE_BUCKET}/orders/"
+BRONZE_ORDERS_PATH = f"s3a://{config.BRONZE_BUCKET}/orders/"
+BRONZE_ITEMS_PATH  = f"s3a://{config.BRONZE_BUCKET}/order_items/"
 
-BRONZE_SCHEMA = StructType([
+# bronze/orders/ — CDC from the orders table
+BRONZE_SCHEMA_ORDERS = StructType([
     StructField("order_id",           StringType()),
-    StructField("session_id",         StringType()),
     StructField("customer_id",        StringType()),
-    StructField("product_id",         StringType()),
-    StructField("seller_id",          StringType()),
-    StructField("category",           StringType()),
-    StructField("price",              StringType()),   # Debezium NUMERIC → binary string in Parquet; cast downstream
-    StructField("freight_value",      StringType()),   # same
-    StructField("purchase_timestamp", LongType()),     # Debezium TIMESTAMP → microseconds since epoch (INT64)
+    StructField("session_id",         StringType()),
+    StructField("purchase_timestamp", LongType()),   # Debezium TIMESTAMP → microseconds since epoch
     StructField("state",              StringType()),
-    StructField("cdc_operation",      StringType()),
-    StructField("cdc_ts_ms",          LongType()),     # Debezium ts_ms → milliseconds since epoch (INT64)
+    StructField("cdc_ts_ms",          LongType()),
     StructField("ingested_at",        StringType()),
-    StructField("source",             StringType()),
+])
+
+# bronze/order_items/ — CDC from the order_items table
+BRONZE_SCHEMA_ITEMS = StructType([
+    StructField("order_item_id",  StringType()),
+    StructField("order_id",       StringType()),
+    StructField("product_id",     StringType()),
+    StructField("seller_id",      StringType()),
+    StructField("price",          StringType()),   # Debezium NUMERIC → string; cast downstream
+    StructField("freight_value",  StringType()),   # same
+    StructField("category",       StringType()),
+    StructField("cdc_ts_ms",      LongType()),
+    StructField("ingested_at",    StringType()),
 ])
 
 
@@ -159,8 +204,8 @@ def _build_region_map(spark):
 def run(spark=None):
     _kill_orphan_spark_jvms("silver_orders")
 
-    if not _has_bronze_data("orders/"):
-        print("[silver_orders] No data in bronze/orders/ yet — skipping")
+    if not _has_bronze_data("order_items/"):
+        print("[silver_orders] No data in bronze/order_items/ yet — skipping")
         return 0
 
     owned_spark = spark is None
@@ -191,83 +236,94 @@ def run(spark=None):
 
         region_df = _build_region_map(spark)
 
-        raw = (
+        # Primary stream: order_items (carries price, freight, product, seller, category)
+        items_stream = (
             spark.readStream
-            .schema(BRONZE_SCHEMA)
-            .option("basePath", BRONZE_PATH)
+            .schema(BRONZE_SCHEMA_ITEMS)
+            .option("basePath", BRONZE_ITEMS_PATH)
             .option("maxFilesPerTrigger", 50)
-            .parquet(BRONZE_PATH)
+            .parquet(BRONZE_ITEMS_PATH)
         )
 
         valid_states_list = list(_VALID_BR_STATES)
 
-        silver = (
-            raw
-            .withColumn("price_d",         F.col("price").cast(DoubleType()))
-            .withColumn("freight_value_d", F.col("freight_value").cast(DoubleType()))
-            .filter(
-                F.col("order_id").isNotNull() &
-                F.col("customer_id").isNotNull() &
-                F.col("price_d").isNotNull() & (F.col("price_d") > 0) &
-                F.col("freight_value_d").isNotNull() & (F.col("freight_value_d") >= 0)
-            )
-            .withColumn("purchase_ts", (F.col("purchase_timestamp") / 1_000_000).cast(TimestampType()))
-            .withColumn("ingest_ts",   F.to_timestamp("ingested_at"))
-            .withColumn("total_value", F.round(F.col("price_d") + F.col("freight_value_d"), 2))
-            # Normalise state: strip whitespace, uppercase, validate against known BR codes
-            .withColumn("state_norm",
-                F.when(
-                    F.upper(F.trim(F.col("state"))).isin(valid_states_list),
-                    F.upper(F.trim(F.col("state")))
-                ).otherwise(F.lit(None))
-            )
-            # Normalise category: strip surrounding whitespace
-            .withColumn("category_norm", F.trim(F.col("category")))
-            .join(region_df, region_df["state"] == F.col("state_norm"), how="left")
-            .select(
-                F.col("order_id"),
-                F.col("session_id"),
-                F.col("customer_id"),
-                F.col("product_id"),
-                F.col("seller_id"),
-                F.col("category_norm").alias("category"),
-                F.col("price_d").alias("price"),
-                F.col("freight_value_d").alias("freight_value"),
-                F.col("total_value"),
-                F.col("purchase_ts"),
-                F.col("state_norm").alias("state"),
-                F.coalesce(F.col("region"), F.lit("Desconhecido")).alias("region"),
-                F.col("ingest_ts").alias("ingested_at"),
-                F.col("cdc_ts_ms"),  # kept for within-batch dedup, dropped before INSERT
-            )
-            .filter(F.col("purchase_ts").isNotNull())
-        )
-
         _repair_checkpoint(config.CHECKPOINT_ORDERS, "silver_orders")
 
-        # foreachBatch deduplication: CDC at-least-once delivery causes the same
-        # order_id to appear as both op='c' and op='u' in Bronze.
-        # Within each batch keep the row with the highest cdc_ts_ms.
-        # Across batches MERGE ensures an existing order_id is never duplicated.
-        def _write_batch(batch_df, batch_id):
-            if batch_df.rdd.isEmpty():
+        # foreachBatch: join order_items batch with all accumulated orders (batch read),
+        # apply cleaning, deduplicate, and MERGE into silver.
+        def _write_batch(items_df, batch_id):
+            if items_df.rdd.isEmpty():
                 return
+
+            # Batch read of all orders accumulated in Bronze so far
+            orders_df = (
+                spark.read
+                .schema(BRONZE_SCHEMA_ORDERS)
+                .option("basePath", BRONZE_ORDERS_PATH)
+                .parquet(BRONZE_ORDERS_PATH)
+                .select("order_id", "customer_id", "session_id", "purchase_timestamp", "state", "cdc_ts_ms")
+            )
+
+            joined = items_df.drop("cdc_ts_ms").join(orders_df, on="order_id", how="inner")
+
+            silver = (
+                joined
+                .withColumn("price_d",         F.col("price").cast(DoubleType()))
+                .withColumn("freight_value_d", F.col("freight_value").cast(DoubleType()))
+                .filter(
+                    F.col("order_id").isNotNull() &
+                    F.col("customer_id").isNotNull() &
+                    F.col("price_d").isNotNull() & (F.col("price_d") > 0) &
+                    F.col("freight_value_d").isNotNull() & (F.col("freight_value_d") >= 0)
+                )
+                .withColumn("purchase_ts", (F.col("purchase_timestamp") / 1_000_000).cast(TimestampType()))
+                .withColumn("ingest_ts",   F.to_timestamp("ingested_at"))
+                .withColumn("total_value", F.round(F.col("price_d") + F.col("freight_value_d"), 2))
+                .withColumn("state_norm",
+                    F.when(
+                        F.upper(F.trim(F.col("state"))).isin(valid_states_list),
+                        F.upper(F.trim(F.col("state")))
+                    ).otherwise(F.lit(None))
+                )
+                .withColumn("category_norm", F.trim(F.col("category")))
+                .join(region_df, region_df["state"] == F.col("state_norm"), how="left")
+                .filter(F.col("purchase_ts").isNotNull())
+                .select(
+                    F.col("order_id"),
+                    F.col("session_id"),
+                    F.col("customer_id"),
+                    F.col("product_id"),
+                    F.col("seller_id"),
+                    F.col("category_norm").alias("category"),
+                    F.col("price_d").alias("price"),
+                    F.col("freight_value_d").alias("freight_value"),
+                    F.col("total_value"),
+                    F.col("purchase_ts"),
+                    F.col("state_norm").alias("state"),
+                    F.coalesce(F.col("region"), F.lit("Desconhecido")).alias("region"),
+                    F.col("ingest_ts").alias("ingested_at"),
+                    F.col("cdc_ts_ms"),
+                )
+            )
+
+            # Within-batch dedup: keep latest CDC event per order_id
             w = Window.partitionBy("order_id").orderBy(F.col("cdc_ts_ms").desc())
             deduped = (
-                batch_df
+                silver
                 .withColumn("_rn", F.row_number().over(w))
                 .filter(F.col("_rn") == 1)
                 .drop("_rn", "cdc_ts_ms")
             )
-            deduped.createOrReplaceTempView("_silver_orders_batch")
+
+            deduped.createOrReplaceGlobalTempView("_silver_orders_batch")
             spark.sql("""
                 MERGE INTO lake.silver.orders t
-                USING _silver_orders_batch s ON t.order_id = s.order_id
+                USING global_temp._silver_orders_batch s ON t.order_id = s.order_id
                 WHEN NOT MATCHED THEN INSERT *
             """)
 
         query = (
-            silver.writeStream
+            items_stream.writeStream
             .foreachBatch(_write_batch)
             .option("checkpointLocation", config.CHECKPOINT_ORDERS)
             .trigger(availableNow=True)
@@ -275,7 +331,7 @@ def run(spark=None):
         )
 
         query.awaitTermination()
-        count = (query.lastProgress or {}).get("numOutputRows", 0)
+        count = (query.lastProgress or {}).get("numInputRows", 0)
         print(f"[silver_orders] Written {count:,} rows to lake.silver.orders")
         return count
     finally:

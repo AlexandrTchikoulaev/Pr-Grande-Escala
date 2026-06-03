@@ -9,19 +9,11 @@ Todas as tabelas lidas são Gold (Iceberg, catálogo `lake`), produzidas pela eq
 ### `lake.gold.fact_sales`
 | Coluna | Tipo | Usado em |
 |---|---|---|
-| `customer_id` | string | churn features |
-| `order_id` | string | churn features (frequency) |
-| `product_id` | string | — |
 | `category_id` | integer | demand features |
 | `date_id` | integer | demand features (join dim_date) |
-| `total_value` | double | churn (monetary), demand (revenue) |
-| `purchase_date` | date | churn (recency), demand (série temporal) |
-
-### `lake.gold.fact_reviews`
-| Coluna | Tipo | Usado em |
-|---|---|---|
-| `customer_id` | string | churn features (avg_rating) |
-| `rating` | integer | churn features |
+| `order_id` | string | demand features (contagem de pedidos) |
+| `total_value` | double | demand features (revenue) |
+| `purchase_date` | date | demand features (série temporal) |
 
 ### `lake.gold.dim_category`
 | Coluna | Tipo | Usado em |
